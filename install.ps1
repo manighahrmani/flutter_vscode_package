@@ -361,10 +361,8 @@ $settingsContent = @"
   "dart.openDevTools": "flutter",
   "dart.runPubGetOnPubspecChanges": "always",
   "dart.defaultFlutterDevice": "edge",
-  "dart.flutterAdditionalArgs": [
-    "-d",
-    "edge"
-  ],
+  "dart.flutterSelectDeviceWhenConnected": false,
+  "dart.webRenderer": "auto",
   
   "editor.formatOnSave": true,
   "editor.tabSize": 2,
