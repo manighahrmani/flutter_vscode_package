@@ -7,7 +7,12 @@
   "dart.previewFlutterUiGuides": true,
   "dart.flutterOutline": true,
   "dart.openDevTools": "flutter",
-  "dart.runPubGetOnPubspecChanges": "prompt",
+  "dart.runPubGetOnPubspecChanges": "always",
+  "dart.defaultFlutterDevice": "edge",
+  "dart.flutterAdditionalArgs": [
+    "-d",
+    "edge"
+  ],
   
   "editor.formatOnSave": true,
   "editor.tabSize": 2,

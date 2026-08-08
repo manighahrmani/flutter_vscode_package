@@ -92,6 +92,20 @@ Assert-Test "VS Code Settings - AutoSave Enabled" {
     }
 }
 
+Assert-Test "VS Code Settings - Default Flutter Device (Edge)" {
+    $Settings = Get-Content "$ScriptRoot\vscode\data\user-data\User\settings.json" -Raw | ConvertFrom-Json
+    if ($Settings.'dart.defaultFlutterDevice' -ne "edge") {
+        throw "dart.defaultFlutterDevice is not configured to 'edge'"
+    }
+}
+
+Assert-Test "VS Code Settings - Auto Run Pub Get Enabled" {
+    $Settings = Get-Content "$ScriptRoot\vscode\data\user-data\User\settings.json" -Raw | ConvertFrom-Json
+    if ($Settings.'dart.runPubGetOnPubspecChanges' -ne "always") {
+        throw "dart.runPubGetOnPubspecChanges is not configured to 'always'"
+    }
+}
+
 Assert-Test "VS Code Settings - Telemetry Disabled" {
     $Settings = Get-Content "$ScriptRoot\vscode\data\user-data\User\settings.json" -Raw | ConvertFrom-Json
     if ($Settings.'telemetry.telemetryLevel' -ne "off") {

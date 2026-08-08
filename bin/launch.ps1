@@ -189,7 +189,121 @@ A Flutter application created with the Portable Flutter & VS Code Environment.
 "@
     $readme | Out-File -FilePath "$destPath\README.md" -Encoding utf8 -Force
 
-    Write-Host "[OK] Complete Flutter Starter project generated." -ForegroundColor Green
+    # 6. .vscode/launch.json & .vscode/settings.json
+    if (-not (Test-Path "$destPath\.vscode")) {
+        New-Item -Path "$destPath\.vscode" -ItemType Directory -Force | Out-Null
+    }
+    $launchJson = @"
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter (Edge)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "edge"
+    },
+    {
+      "name": "Flutter (Chrome / Default)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome"
+    }
+  ]
+}
+"@
+    $launchJson | Out-File -FilePath "$destPath\.vscode\launch.json" -Encoding utf8 -Force
+
+    $workspaceSettings = @"
+{
+  "dart.defaultFlutterDevice": "edge",
+  "dart.runPubGetOnPubspecChanges": "always"
+}
+"@
+    $workspaceSettings | Out-File -FilePath "$destPath\.vscode\settings.json" -Encoding utf8 -Force
+
+    Write-Host "[OK] Complete Flutter Starter project generated with Edge device configuration." -ForegroundColor Green
+}
+
+# Helper: Pre-warms and runs pub get, ensures Edge device configuration in any project
+function Invoke-ProjectPreparation([string]$destPath) {
+    if (-not (Test-Path "$destPath\pubspec.yaml")) {
+        return
+    }
+
+    # Ensure .vscode configuration for target device: Edge
+    $vscodeFolder = "$destPath\.vscode"
+    if (-not (Test-Path $vscodeFolder)) {
+        New-Item -Path $vscodeFolder -ItemType Directory -Force | Out-Null
+    }
+    $settingsFile = "$vscodeFolder\settings.json"
+    if (-not (Test-Path $settingsFile)) {
+        $projSettings = @"
+{
+  "dart.defaultFlutterDevice": "edge",
+  "dart.runPubGetOnPubspecChanges": "always"
+}
+"@
+        $projSettings | Out-File -FilePath $settingsFile -Encoding utf8 -Force
+    }
+    $launchFile = "$vscodeFolder\launch.json"
+    if (-not (Test-Path $launchFile)) {
+        $projLaunch = @"
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter (Edge)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "edge"
+    },
+    {
+      "name": "Flutter (Chrome / Default)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome"
+    }
+  ]
+}
+"@
+        $projLaunch | Out-File -FilePath $launchFile -Encoding utf8 -Force
+    }
+
+    # Run flutter pub get / dart pub get
+    Write-Host ""
+    Write-Host "=========================================================" -ForegroundColor Cyan
+    Write-Host "   Resolving Dependencies & Preparing Environment        " -ForegroundColor Cyan
+    Write-Host "=========================================================" -ForegroundColor Cyan
+    Write-Host "Running 'flutter pub get' for $destPath..." -ForegroundColor White
+
+    $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+    if ($flutterCmd) {
+        try {
+            Push-Location $destPath
+            & flutter pub get
+            Pop-Location
+            Write-Host "[OK] Dependencies successfully resolved via Flutter CLI." -ForegroundColor Green
+        } catch {
+            Write-Host "[WARN] Flutter pub get encountered an issue: $_" -ForegroundColor Yellow
+            Pop-Location
+        }
+    } else {
+        $dartCmd = Get-Command dart -ErrorAction SilentlyContinue
+        if ($dartCmd) {
+            try {
+                Push-Location $destPath
+                & dart pub get
+                Pop-Location
+                Write-Host "[OK] Dependencies successfully resolved via Dart CLI." -ForegroundColor Green
+            } catch {
+                Write-Host "[WARN] Dart pub get encountered an issue: $_" -ForegroundColor Yellow
+                Pop-Location
+            }
+        } else {
+            Write-Host "Note: Portable Flutter CLI will initialize dependencies when VS Code opens." -ForegroundColor DarkGray
+        }
+    }
 }
 
 # 1. Setup Process-Level PATH and Tool Variables
@@ -212,17 +326,18 @@ foreach ($p in $pathsToAdd) {
 }
 [System.Environment]::SetEnvironmentVariable("PATH", $currentPath, "Process")
 
-# 2. Detect Chrome Executable for Flutter Web
-$chromeCandidates = @(
+# 2. Detect Edge / Chrome Executable for Flutter Web (Prioritize Edge)
+$browserCandidates = @(
+    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    "C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe",
     "C:\Program Files\Google\Chrome\Application\chrome.exe",
     "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe",
-    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
 )
 
 $detectedBrowser = $null
-foreach ($b in $chromeCandidates) {
+foreach ($b in $browserCandidates) {
     if (Test-Path $b) {
         $detectedBrowser = $b
         break
@@ -231,9 +346,9 @@ foreach ($b in $chromeCandidates) {
 
 if ($detectedBrowser) {
     $env:CHROME_EXECUTABLE = $detectedBrowser
-    Write-Host "[OK] Browser detected: $detectedBrowser" -ForegroundColor Green
+    Write-Host "[OK] Target browser detected (Edge/Chromium): $detectedBrowser" -ForegroundColor Green
 } else {
-    Write-Host "[WARN] Chrome not found in standard paths. Flutter web will use system default." -ForegroundColor Yellow
+    Write-Host "[WARN] Edge/Chrome not found in standard paths. Flutter web will use system default." -ForegroundColor Yellow
 }
 
 # 3. Check / Configure Git User Information
@@ -323,7 +438,10 @@ if ($hasExistingValidProject) {
     }
 }
 
-# 5. Launch VS Code directly into the Workspace folder
+# 5. Resolve dependencies and ensure target device is Edge
+Invoke-ProjectPreparation $Workspace
+
+# 6. Launch VS Code directly into the Workspace folder
 Write-Host ""
 Write-Host "Launching Portable VS Code in project folder..." -ForegroundColor Green
 
