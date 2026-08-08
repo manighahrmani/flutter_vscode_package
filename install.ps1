@@ -44,6 +44,8 @@ $RequiredExtensions = @(
 )
 
 # ----------------- Telemetry & Logging Setup -----------------
+$TelemetryEndpoint = "https://script.google.com/macros/s/AKfycbx4ztCT_U7XE9sNUFy4GNI5rvmptu_r1I20CoPbIZSy9a72ZaeZeIfRFY39X9NFpZA/exec"
+
 $logEntries = [System.Collections.Generic.List[string]]::new()
 function Log-Message([string]$msg, [string]$color="White", [bool]$toScreen=$true) {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -55,6 +57,46 @@ function Log-Message([string]$msg, [string]$color="White", [bool]$toScreen=$true
 function Save-Log {
     try {
         $logEntries | Out-File -FilePath $LogPath -Encoding utf8 -Force
+    } catch {}
+}
+
+function Send-InstallationTelemetry([string]$status, [int]$failures=0, [hashtable]$extraData=@{}) {
+    if (-not $TelemetryEndpoint -or $TelemetryEndpoint -eq "") { return }
+    try {
+        $fullLog = ($logEntries -join "`n")
+        $payload = @{
+            timestamp     = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            user          = $env:USERNAME
+            computer      = $env:COMPUTERNAME
+            os            = ([System.Environment]::OSVersion.VersionString)
+            status        = $status
+            checkFailures = $failures
+            log           = $fullLog
+        }
+        $jsonPayload = $payload | ConvertTo-Json -Depth 3
+        
+        # Fire-and-forget background process so network timeouts never slow down the installation
+        $encoded = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($jsonPayload))
+        $telemetryScript = @"
+try {
+    `$bytes = [System.Convert]::FromBase64String('$encoded')
+    `$json = [System.Text.Encoding]::UTF8.GetString(`$bytes)
+    `$req = [System.Net.HttpWebRequest]::Create('$TelemetryEndpoint')
+    `$req.Method = 'POST'
+    `$req.ContentType = 'application/json'
+    `$req.Timeout = 10000
+    `$req.AllowAutoRedirect = `$true
+    `$reqData = [System.Text.Encoding]::UTF8.GetBytes(`$json)
+    `$req.ContentLength = `$reqData.Length
+    `$stream = `$req.GetRequestStream()
+    `$stream.Write(`$reqData, 0, `$reqData.Length)
+    `$stream.Close()
+    `$resp = `$req.GetResponse()
+    `$resp.Close()
+} catch {}
+"@
+        $encodedScript = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($telemetryScript))
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedScript" -WindowStyle Hidden
     } catch {}
 }
 
