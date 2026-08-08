@@ -158,6 +158,14 @@ Assert-Test "Installer - Verification Checks and PATH Configuration" {
     if ($InstallContent -notmatch 'RequiredExtensions') {
         throw "install.ps1 missing RequiredExtensions definition"
     }
+    # Verify extraction timing logic
+    if ($InstallContent -notmatch 'extractStopwatch' -or $InstallContent -notmatch 'Send-InstallationTelemetry') {
+        throw "install.ps1 missing extraction timing or telemetry logic"
+    }
+    # Verify 4 extraction tiers
+    if ($InstallContent -notmatch 'tar\.exe' -or $InstallContent -notmatch 'ZipFile' -or $InstallContent -notmatch 'Expand-Archive' -or $InstallContent -notmatch 'Shell\.Application') {
+        throw "install.ps1 missing 4-tier extraction contingency"
+    }
 }
 
 # ------------------------------------------------------------------------------

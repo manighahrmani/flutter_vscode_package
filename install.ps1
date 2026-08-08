@@ -61,6 +61,7 @@ function Save-Log {
 function Fail-Exit([string]$reason) {
     Log-Message "FATAL ERROR: $reason" "Red"
     Save-Log
+    Send-InstallationTelemetry "FAILED" 1 @{}
     Write-Host ""
     Write-Host "==========================================================================" -ForegroundColor Red
     Write-Host "                      INSTALLATION FAILED                                 " -ForegroundColor Red
@@ -126,52 +127,119 @@ function Download-FileWithRetry([string]$url, [string]$outPath, [string]$descrip
     return $false
 }
 
-function Extract-ZipArchive([string]$zipFile, [string]$targetDir) {
+function Extract-ZipArchive([string]$zipFile, [string]$targetDir, [string]$description="archive") {
     if (-not (Test-Path $targetDir)) {
         New-Item -Path $targetDir -ItemType Directory -Force | Out-Null
     }
 
-    # Tier 1: tar.exe
+    $extractStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $extractedMethod = $null
+
+    # Tier 1: Native tar.exe (Fastest)
     $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
     if ($tarCmd) {
         try {
             & tar.exe -xf $zipFile -C $targetDir 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) { return $true }
+            if ($LASTEXITCODE -eq 0) {
+                $extractedMethod = "Native tar.exe"
+            }
         } catch {}
     }
 
     # Tier 2: .NET ZipFile (Entry-by-Entry with overwrite)
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($zipFile)
-        foreach ($entry in $zip.Entries) {
-            $destPath = Join-Path $targetDir $entry.FullName
-            if ([string]::IsNullOrEmpty($entry.Name)) {
-                if (-not (Test-Path $destPath)) {
-                    New-Item -ItemType Directory -Path $destPath -Force -ErrorAction SilentlyContinue | Out-Null
+    if (-not $extractedMethod) {
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($zipFile)
+            foreach ($entry in $zip.Entries) {
+                $destPath = Join-Path $targetDir $entry.FullName
+                if ([string]::IsNullOrEmpty($entry.Name)) {
+                    if (-not (Test-Path $destPath)) {
+                        New-Item -ItemType Directory -Path $destPath -Force -ErrorAction SilentlyContinue | Out-Null
+                    }
+                } else {
+                    $p = Split-Path -Parent $destPath
+                    if (-not (Test-Path $p)) {
+                        New-Item -ItemType Directory -Path $p -Force -ErrorAction SilentlyContinue | Out-Null
+                    }
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destPath, $true)
                 }
-            } else {
-                $p = Split-Path -Parent $destPath
-                if (-not (Test-Path $p)) {
-                    New-Item -ItemType Directory -Path $p -Force -ErrorAction SilentlyContinue | Out-Null
-                }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destPath, $true)
             }
-        }
-        $zip.Dispose()
-        return $true
-    } catch {}
+            $zip.Dispose()
+            $extractedMethod = ".NET ZipFile API"
+        } catch {}
+    }
 
-    # Tier 3: Expand-Archive
+    # Tier 3: PowerShell Expand-Archive
+    if (-not $extractedMethod) {
+        try {
+            $oldP = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            Expand-Archive -Path $zipFile -DestinationPath $targetDir -Force -ErrorAction Stop
+            $ProgressPreference = $oldP
+            $extractedMethod = "PowerShell Expand-Archive"
+        } catch {}
+    }
+
+    # Tier 4: Windows Shell COM Object
+    if (-not $extractedMethod) {
+        try {
+            $shell = New-Object -ComObject Shell.Application
+            $zipPackage = $shell.NameSpace($zipFile)
+            $destination = $shell.NameSpace($targetDir)
+            $destination.CopyHere($zipPackage.Items(), 16) # 16 = Respond 'Yes to All'
+            $extractedMethod = "Windows Shell COM"
+        } catch {}
+    }
+
+    $extractStopwatch.Stop()
+    $durationSec = [math]::Round($extractStopwatch.Elapsed.TotalSeconds, 1)
+
+    if ($extractedMethod) {
+        Log-Message "[OK] Extracted $description in ${durationSec}s (Method: $extractedMethod)" "DarkGray" $false
+        return $true
+    } else {
+        Log-Message "[FAIL] All 4 extraction tiers failed for $description in ${durationSec}s" "Red"
+        return $false
+    }
+}
+
+# ----------------- Remote Telemetry Dispatcher -----------------
+$TelemetryEndpoint = "" # Set Google Apps Script / Cloud Webhook URL to receive live telemetry
+function Send-InstallationTelemetry([string]$status, [int]$checkFailures, [hashtable]$timings) {
+    if (-not $TelemetryEndpoint -or $TelemetryEndpoint.Trim() -eq "") {
+        return
+    }
     try {
-        $oldP = $ProgressPreference
-        $ProgressPreference = 'SilentlyContinue'
-        Expand-Archive -Path $zipFile -DestinationPath $targetDir -Force -ErrorAction Stop
-        $ProgressPreference = $oldP
-        return $true
-    } catch {}
+        $payload = @{
+            timestamp        = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            user             = $env:USERNAME
+            computer         = $env:COMPUTERNAME
+            os               = [System.Environment]::OSVersion.VersionString
+            psVersion        = "$($PSVersionTable.PSVersion)"
+            status           = $status
+            checkFailures    = $checkFailures
+            timings          = $timings
+            log              = ($logEntries -join "`n")
+        } | ConvertTo-Json -Depth 5
 
-    return $false
+        # Asynchronous non-blocking HTTP POST
+        [System.Threading.Tasks.Task]::Run([Action]{
+            try {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+                $req = [System.Net.WebRequest]::Create($TelemetryEndpoint)
+                $req.Method = "POST"
+                $req.ContentType = "application/json"
+                $req.ContentLength = $bytes.Length
+                $req.Timeout = 4000
+                $stream = $req.GetRequestStream()
+                $stream.Write($bytes, 0, $bytes.Length)
+                $stream.Close()
+                $resp = $req.GetResponse()
+                $resp.Close()
+            } catch {}
+        }) | Out-Null
+    } catch {}
 }
 
 # ----------------- Start Installation -----------------
@@ -227,7 +295,7 @@ foreach ($d in $dirs) {
 Log-Message "[1/6] Setting up base launcher scripts and configuration..." "Green"
 $pkgZip = "$env:TEMP\flutter_vscode_pkg.zip"
 if (Download-FileWithRetry $UrlPackageRelease $pkgZip "Package Template") {
-    Extract-ZipArchive $pkgZip $DestFolder | Out-Null
+    Extract-ZipArchive $pkgZip $DestFolder "Base Launcher & Config Template" | Out-Null
     Remove-Item $pkgZip -Force -ErrorAction SilentlyContinue
 }
 
@@ -299,8 +367,7 @@ Log-Message "[2/6] Setting up VS Code Portable..." "Green"
 if (-not (Test-Path "$VSCodeFolder\Code.exe")) {
     $vscodeZip = "$env:TEMP\vscode_win64.zip"
     if (Download-FileWithRetry $UrlVSCode $vscodeZip "VS Code Portable x64") {
-        Log-Message "Extracting VS Code Portable..." "DarkGray"
-        Extract-ZipArchive $vscodeZip $VSCodeFolder | Out-Null
+        Extract-ZipArchive $vscodeZip $VSCodeFolder "VS Code Portable x64" | Out-Null
         Remove-Item $vscodeZip -Force -ErrorAction SilentlyContinue
     }
 }
@@ -314,8 +381,7 @@ Log-Message "[3/6] Setting up Flutter SDK..." "Green"
 if (-not (Test-Path "$ToolsFolder\flutter\bin\flutter.bat")) {
     $flutterZip = "$env:TEMP\flutter_sdk.zip"
     if (Download-FileWithRetry $UrlFlutter $flutterZip "Flutter SDK (Windows x64)") {
-        Log-Message "Extracting Flutter SDK (this may take 1-2 minutes)..." "DarkGray"
-        Extract-ZipArchive $flutterZip $ToolsFolder | Out-Null
+        Extract-ZipArchive $flutterZip $ToolsFolder "Flutter SDK (Windows x64)" | Out-Null
         Remove-Item $flutterZip -Force -ErrorAction SilentlyContinue
     }
 }
@@ -329,14 +395,14 @@ Log-Message "[4/6] Setting up Git and SQLite command-line tools..." "Green"
 if (-not (Test-Path "$ToolsFolder\git\cmd\git.exe")) {
     $gitZip = "$env:TEMP\mingit.zip"
     if (Download-FileWithRetry $UrlGit $gitZip "MinGit") {
-        Extract-ZipArchive $gitZip "$ToolsFolder\git" | Out-Null
+        Extract-ZipArchive $gitZip "$ToolsFolder\git" "MinGit" | Out-Null
         Remove-Item $gitZip -Force -ErrorAction SilentlyContinue
     }
 }
 if (-not (Test-Path "$ToolsFolder\sqlite\sqlite3.exe")) {
     $sqliteZip = "$env:TEMP\sqlite.zip"
     if (Download-FileWithRetry $UrlSQLite $sqliteZip "SQLite Tools") {
-        Extract-ZipArchive $sqliteZip "$env:TEMP\sqlite_extracted" | Out-Null
+        Extract-ZipArchive $sqliteZip "$env:TEMP\sqlite_extracted" "SQLite Tools" | Out-Null
         $foundSqlite = Get-ChildItem -Path "$env:TEMP\sqlite_extracted" -Filter "sqlite3.exe" -Recurse | Select-Object -First 1
         if ($foundSqlite) {
             Copy-Item -Path $foundSqlite.FullName -Destination "$ToolsFolder\sqlite\sqlite3.exe" -Force
@@ -526,4 +592,5 @@ Log-Message ""
 Log-Message "Launching Portable Flutter & VS Code Environment..." "Cyan"
 
 Save-Log
+Send-InstallationTelemetry "SUCCESS" 0 @{}
 Start-Process -FilePath $launcherBat -WorkingDirectory $DestFolder
