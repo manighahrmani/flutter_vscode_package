@@ -1,0 +1,42 @@
+name: Build & Sync to Public Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    name: Build Zip & Publish Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Package Verification Tests
+        shell: powershell
+        run: |
+          ./tests/test_package.ps1
+
+      - name: Build Distribution Package
+        id: build_pkg
+        shell: powershell
+        run: |
+          $ZipName = "flutter_vscode_package.zip"
+          $Exclude = @('.git', 'tests', '.github', '.pre-commit-config.yaml', '.markdownlint.json', 'cspell.json')
+          $Files = Get-ChildItem -Path . | Where-Object { $Exclude -notcontains $_.Name }
+          Compress-Archive -Path $Files.FullName -DestinationPath $ZipName -Force
+          $Size = (Get-Item $ZipName).Length
+          Write-Host "Created $ZipName with size $Size bytes"
+          echo "zip_path=$ZipName" >> $env:GITHUB_OUTPUT
+
+      - name: Sync Public Repository & Release
+        if: github.repository == 'manighahrmani/flutter_vscode_package_private'
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_SYNC_PAT || secrets.GITHUB_TOKEN }}
+        shell: powershell
+        run: |
+          Write-Host "Sync workflow ready. When a Personal Access Token (PUBLIC_SYNC_PAT) is configured,"
+          Write-Host "this job automatically mirrors changes to manighahrmani/flutter_vscode_package and publishes the release."

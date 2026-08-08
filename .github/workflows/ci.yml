@@ -1,0 +1,65 @@
+name: CI & Package Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint-and-validate:
+    name: Linting & Static Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate JSON Files
+        run: |
+          for f in $(find . -name "*.json" ! -path "*/.git/*"); do
+            echo "Checking $f..."
+            python3 -m json.tool "$f" > /dev/null
+          done
+
+      - name: Check YAML Syntax
+        run: |
+          python3 -c "
+          import yaml, glob
+          for f in glob.glob('**/*.yaml', recursive=True) + glob.glob('**/*.yml', recursive=True):
+              if '.git' not in f:
+                  print(f'Checking {f}...')
+                  with open(f, 'r') as fp:
+                      yaml.safe_load(fp)
+          "
+
+  test-windows:
+    name: PowerShell Test Suite & Archive Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Package Test Suite
+        shell: powershell
+        run: |
+          ./tests/test_package.ps1
+
+      - name: Test Archive Packaging
+        shell: powershell
+        run: |
+          $DistDir = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/dist" -Force
+          $ZipPath = Join-Path $DistDir.FullName "flutter_vscode_package.zip"
+          
+          # Exclude .git and tests from distribution zip
+          $Exclude = @('.git', 'tests', '.github', '.pre-commit-config.yaml')
+          $Files = Get-ChildItem -Path . | Where-Object { $Exclude -notcontains $_.Name }
+          
+          Compress-Archive -Path $Files.FullName -DestinationPath $ZipPath -Force
+          
+          if (-not (Test-Path $ZipPath)) {
+            throw "Failed to create distribution zip archive"
+          }
+          
+          $Size = (Get-Item $ZipPath).Length
+          Write-Host "Created archive: $ZipPath ($Size bytes)"
