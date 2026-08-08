@@ -7,6 +7,58 @@ $ScriptRoot = Split-Path -Parent $PSScriptRoot
 $ToolsDir   = "$ScriptRoot\tools"
 $VSCodeExe  = "$ScriptRoot\vscode\Code.exe"
 $Workspace  = "$ScriptRoot\workspace\project"
+$TelemetryEndpoint = "https://script.google.com/macros/s/AKfycbx4ztCT_U7XE9sNUFy4GNI5rvmptu_r1I20CoPbIZSy9a72ZaeZeIfRFY39X9NFpZA/exec"
+
+$launchStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$launchLogs = [System.Collections.Generic.List[string]]::new()
+
+function Log-Launch([string]$msg) {
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $launchLogs.Add("[$timestamp] $msg")
+}
+
+function Send-LaunchTelemetry([string]$eventType, [string]$choiceDetail, [string]$status="SUCCESS", [int]$failures=0) {
+    if (-not $TelemetryEndpoint -or $TelemetryEndpoint -eq "") { return }
+    try {
+        $durSec = if ($launchStopwatch) { [Math]::Round($launchStopwatch.Elapsed.TotalSeconds, 1).ToString() + "s" } else { "" }
+        $fullLog = ($launchLogs -join "`n")
+        $payload = @{
+            timestamp     = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            event         = $eventType
+            user          = $env:USERNAME
+            computer      = $env:COMPUTERNAME
+            os            = ([System.Environment]::OSVersion.VersionString)
+            status        = $status
+            choice        = $choiceDetail
+            duration      = $durSec
+            checkFailures = $failures
+            log           = $fullLog
+        }
+        $jsonPayload = $payload | ConvertTo-Json -Depth 3
+        
+        $encoded = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($jsonPayload))
+        $telemetryScript = @"
+try {
+    `$bytes = [System.Convert]::FromBase64String('$encoded')
+    `$json = [System.Text.Encoding]::UTF8.GetString(`$bytes)
+    `$req = [System.Net.HttpWebRequest]::Create('$TelemetryEndpoint')
+    `$req.Method = 'POST'
+    `$req.ContentType = 'application/json'
+    `$req.Timeout = 10000
+    `$req.AllowAutoRedirect = `$true
+    `$reqData = [System.Text.Encoding]::UTF8.GetBytes(`$json)
+    `$req.ContentLength = `$reqData.Length
+    `$stream = `$req.GetRequestStream()
+    `$stream.Write(`$reqData, 0, `$reqData.Length)
+    `$stream.Close()
+    `$resp = `$req.GetResponse()
+    `$resp.Close()
+} catch {}
+"@
+        $encodedScript = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($telemetryScript))
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedScript" -WindowStyle Hidden
+    } catch {}
+}
 
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host "     Portable Flutter & VS Code Environment Launcher     " -ForegroundColor Cyan
@@ -237,18 +289,17 @@ function Invoke-ProjectPreparation([string]$destPath) {
         New-Item -Path $vscodeFolder -ItemType Directory -Force | Out-Null
     }
     $settingsFile = "$vscodeFolder\settings.json"
-    if (-not (Test-Path $settingsFile)) {
-        $projSettings = @"
+    $projSettings = @'
 {
   "dart.defaultFlutterDevice": "edge",
+  "dart.flutterSelectDeviceWhenConnected": false,
   "dart.runPubGetOnPubspecChanges": "always"
 }
-"@
-        $projSettings | Out-File -FilePath $settingsFile -Encoding utf8 -Force
-    }
+'@
+    $projSettings | Out-File -FilePath $settingsFile -Encoding utf8 -Force
+
     $launchFile = "$vscodeFolder\launch.json"
-    if (-not (Test-Path $launchFile)) {
-        $projLaunch = @"
+    $projLaunch = @'
 {
   "version": "0.2.0",
   "configurations": [
@@ -257,18 +308,11 @@ function Invoke-ProjectPreparation([string]$destPath) {
       "request": "launch",
       "type": "dart",
       "deviceId": "edge"
-    },
-    {
-      "name": "Flutter (Chrome / Default)",
-      "request": "launch",
-      "type": "dart",
-      "deviceId": "chrome"
     }
   ]
 }
-"@
-        $projLaunch | Out-File -FilePath $launchFile -Encoding utf8 -Force
-    }
+'@
+    $projLaunch | Out-File -FilePath $launchFile -Encoding utf8 -Force
 
     # Run flutter pub get / dart pub get
     Write-Host ""
@@ -276,6 +320,7 @@ function Invoke-ProjectPreparation([string]$destPath) {
     Write-Host "   Resolving Dependencies & Preparing Environment        " -ForegroundColor Cyan
     Write-Host "=========================================================" -ForegroundColor Cyan
     Write-Host "Running 'flutter pub get' for $destPath..." -ForegroundColor White
+    Log-Launch "Resolving dependencies via flutter pub get for $destPath"
 
     $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
     if ($flutterCmd) {
@@ -284,8 +329,10 @@ function Invoke-ProjectPreparation([string]$destPath) {
             & flutter pub get
             Pop-Location
             Write-Host "[OK] Dependencies successfully resolved via Flutter CLI." -ForegroundColor Green
+            Log-Launch "Dependencies resolved successfully"
         } catch {
             Write-Host "[WARN] Flutter pub get encountered an issue: $_" -ForegroundColor Yellow
+            Log-Launch "Warning: flutter pub get error: $_"
             Pop-Location
         }
     } else {
@@ -296,8 +343,10 @@ function Invoke-ProjectPreparation([string]$destPath) {
                 & dart pub get
                 Pop-Location
                 Write-Host "[OK] Dependencies successfully resolved via Dart CLI." -ForegroundColor Green
+                Log-Launch "Dependencies resolved via Dart CLI"
             } catch {
                 Write-Host "[WARN] Dart pub get encountered an issue: $_" -ForegroundColor Yellow
+                Log-Launch "Warning: dart pub get error: $_"
                 Pop-Location
             }
         } else {
@@ -306,49 +355,45 @@ function Invoke-ProjectPreparation([string]$destPath) {
     }
 }
 
-# 1. Setup Process-Level PATH and Tool Variables
-$env:FLUTTER_ROOT = "$ToolsDir\flutter"
-$env:PUB_CACHE    = "$ToolsDir\pub_cache"
+# ----------------- Main Launcher Workflow -----------------
 
-$pathsToAdd = @(
+# 1. Detect & Configure Environment Paths
+$toolsPath = @(
     "$ToolsDir\flutter\bin",
     "$ToolsDir\flutter\bin\cache\dart-sdk\bin",
     "$ToolsDir\git\cmd",
     "$ToolsDir\git\bin",
-    "$ToolsDir\sqlite"
+    "$ToolsDir\sqlite",
+    "$ScriptRoot\vscode\bin"
 )
-
-$currentPath = [System.Environment]::GetEnvironmentVariable("PATH", "Process")
-foreach ($p in $pathsToAdd) {
-    if (Test-Path $p) {
-        $currentPath = "$p;$currentPath"
+foreach ($p in $toolsPath) {
+    if ((Test-Path $p) -and ($env:Path -notlike "*$p*")) {
+        $env:Path = "$p;$env:Path"
     }
 }
-[System.Environment]::SetEnvironmentVariable("PATH", $currentPath, "Process")
 
-# 2. Detect Edge / Chrome Executable for Flutter Web (Prioritize Edge)
-$browserCandidates = @(
-    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    "C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-    "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe",
-    "C:\Program Files\Google\Chrome\Application\chrome.exe",
-    "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+# 2. Configure Edge as Default Web Device
+$edgeCandidates = @(
+    "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+    "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe"
 )
-
-$detectedBrowser = $null
-foreach ($b in $browserCandidates) {
+$detectedEdge = $null
+foreach ($b in $edgeCandidates) {
     if (Test-Path $b) {
-        $detectedBrowser = $b
+        $detectedEdge = $b
         break
     }
 }
 
-if ($detectedBrowser) {
-    $env:CHROME_EXECUTABLE = $detectedBrowser
-    Write-Host "[OK] Target browser detected (Edge/Chromium): $detectedBrowser" -ForegroundColor Green
+if ($detectedEdge) {
+    $env:CHROME_EXECUTABLE = $detectedEdge
+    $env:FLUTTER_WEB_BROWSER = "edge"
+    Write-Host "[OK] Target browser configured (Microsoft Edge): $detectedEdge" -ForegroundColor Green
+    Log-Launch "Target browser set to Edge: $detectedEdge"
 } else {
-    Write-Host "[WARN] Edge/Chrome not found in standard paths. Flutter web will use system default." -ForegroundColor Yellow
+    Write-Host "[WARN] Microsoft Edge not found in standard paths. Flutter will use system default browser." -ForegroundColor Yellow
+    Log-Launch "Edge not found in standard paths"
 }
 
 # 3. Check / Configure Git User Information
@@ -372,6 +417,7 @@ if ($gitAvailable) {
             if ($inputEmail) { & git config --global user.email "$inputEmail" }
         }
         Write-Host "[OK] Git author configuration updated." -ForegroundColor Green
+        Log-Launch "Configured git author name: $inputName, email: $inputEmail"
     }
 }
 
@@ -379,6 +425,9 @@ if ($gitAvailable) {
 if (-not (Test-Path "$ScriptRoot\workspace")) {
     New-Item -Path "$ScriptRoot\workspace" -ItemType Directory -Force | Out-Null
 }
+
+$launchEvent = "LAUNCH_STARTER"
+$choiceDetail = "Created new Starter Flutter App with Edge target"
 
 $hasExistingValidProject = (Test-Path "$Workspace\pubspec.yaml") -or (Test-Path "$Workspace\.git")
 
@@ -396,6 +445,9 @@ if ($hasExistingValidProject) {
     if ($action -eq "2") {
         $forkUrl = Read-Host "Paste your GitHub Repository URL (e.g. https://github.com/<username>/<repo>)"
         if ($forkUrl) {
+            $launchEvent = "LAUNCH_CLONE"
+            $choiceDetail = "Cloned repository: $forkUrl"
+            Log-Launch "Cloning repository: $forkUrl"
             Remove-Item $Workspace -Recurse -Force -ErrorAction SilentlyContinue
             Write-Host "Cloning $forkUrl..." -ForegroundColor Green
             if ($gitAvailable) {
@@ -408,9 +460,16 @@ if ($hasExistingValidProject) {
     } elseif ($action -eq "3") {
         $confirm = Read-Host "Are you sure you want to reset to a clean starter project? (y/N)"
         if ($confirm -eq 'y' -or $confirm -eq 'Y') {
+            $launchEvent = "LAUNCH_RESET_STARTER"
+            $choiceDetail = "Reset workspace to clean Starter Flutter App"
+            Log-Launch "Reset workspace to starter project"
             Remove-Item $Workspace -Recurse -Force -ErrorAction SilentlyContinue
             Initialize-StarterFlutterProject $Workspace
         }
+    } else {
+        $launchEvent = "LAUNCH_EXISTING"
+        $choiceDetail = "Opened existing project at $Workspace"
+        Log-Launch "Opened existing workspace: $Workspace"
     }
 } else {
     Write-Host ""
@@ -424,6 +483,9 @@ if ($hasExistingValidProject) {
     $repoUrl = Read-Host "Repository URL (or press Enter for Starter App)"
 
     if ($repoUrl -and $repoUrl.Trim() -ne "") {
+        $launchEvent = "LAUNCH_CLONE"
+        $choiceDetail = "Cloned repository: $repoUrl"
+        Log-Launch "Cloning initial repository: $repoUrl"
         Write-Host "Cloning from $repoUrl..." -ForegroundColor Green
         if ($gitAvailable) {
             & git clone $repoUrl $Workspace
@@ -434,6 +496,9 @@ if ($hasExistingValidProject) {
         }
     } else {
         # Student pressed Enter -> Generate Hello World / Starter Flutter Project immediately!
+        $launchEvent = "LAUNCH_STARTER"
+        $choiceDetail = "Created new Starter Flutter App with Edge target"
+        Log-Launch "User pressed Enter -> Initializing starter project"
         Initialize-StarterFlutterProject $Workspace
     }
 }
@@ -441,9 +506,13 @@ if ($hasExistingValidProject) {
 # 5. Resolve dependencies and ensure target device is Edge
 Invoke-ProjectPreparation $Workspace
 
-# 6. Launch VS Code directly into the Workspace folder
+# 6. Send launch telemetry to Google Apps Script Web App
+Send-LaunchTelemetry $launchEvent $choiceDetail "SUCCESS" 0
+
+# 7. Launch VS Code directly into the Workspace folder
 Write-Host ""
 Write-Host "Launching Portable VS Code in project folder..." -ForegroundColor Green
+Log-Launch "Starting VS Code instance"
 
 if (Test-Path $VSCodeExe) {
     $extDir = "$ScriptRoot\vscode\data\extensions"

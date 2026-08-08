@@ -1,46 +1,50 @@
 /**
  * Google Apps Script - Remote Log & Telemetry Collector for Portable Flutter VS Code Package
  * 
- * SETUP INSTRUCTIONS (2 Minutes):
- * 1. Go to https://script.google.com and click "New project".
- * 2. Paste this entire code into `Code.gs`.
- * 3. Click "Deploy" -> "New deployment".
- * 4. Select type: "Web app".
+ * SETUP INSTRUCTIONS:
+ * 1. Go to https://script.google.com and paste this entire code into `Code.gs`.
+ * 2. Click "Deploy" -> "Manage deployments" -> Edit -> "New version" -> Deploy.
  *    - Execute as: "Me" (your Google account).
  *    - Who has access: "Anyone".
- * 5. Copy the Web App URL and set it in `install.ps1`:
- *    $TelemetryEndpoint = "https://script.google.com/macros/s/.../exec"
  */
 
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
     var timestamp = data.timestamp || new Date().toISOString();
+    var eventType = data.event || data.status || "UNKNOWN";
     var user = data.user || "Unknown";
     var computer = data.computer || "Unknown";
     var os = data.os || "Unknown";
-    var status = data.status || "Unknown";
-    var checkFailures = data.checkFailures || 0;
+    var choice = data.choice || data.detail || "";
+    var duration = data.duration || "";
+    var checkFailures = data.checkFailures !== undefined ? data.checkFailures : 0;
     var logContent = data.log || "";
 
-    // 1. Log to Google Sheet
+    // 1. Save full raw log file to Google Drive folder if log content exists
+    var fileUrl = "";
+    if (logContent && logContent.trim().length > 0) {
+      var folder = getOrCreateLogsFolder();
+      var logFileName = eventType.toLowerCase() + "_" + user + "_" + computer + "_" + new Date().getTime() + ".log";
+      var file = folder.createFile(logFileName, logContent, MimeType.PLAIN_TEXT);
+      fileUrl = file.getUrl();
+    }
+
+    // 2. Log row to Google Sheet
     var sheet = getOrCreateTelemetrySheet();
     sheet.appendRow([
       timestamp,
+      eventType,
       user,
       computer,
-      os,
-      status,
+      choice,
+      duration,
       checkFailures,
-      logContent.substring(0, 1000) // Brief snippet in sheet
+      os,
+      fileUrl
     ]);
 
-    // 2. Save full raw log file to Google Drive folder
-    var folder = getOrCreateLogsFolder();
-    var logFileName = "install_" + user + "_" + computer + "_" + new Date().getTime() + ".log";
-    folder.createFile(logFileName, logContent, MimeType.PLAIN_TEXT);
-
-    return ContentService.createTextOutput(JSON.stringify({ status: "OK", id: logFileName }))
+    return ContentService.createTextOutput(JSON.stringify({ status: "OK", fileUrl: fileUrl }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: "ERROR", message: err.toString() }))
@@ -55,11 +59,14 @@ function getOrCreateTelemetrySheet() {
     ss = SpreadsheetApp.open(files.next());
   } else {
     ss = SpreadsheetApp.create("Flutter_VSCode_Telemetry_Log");
-    var s = ss.getActiveSheet();
-    s.appendRow(["Timestamp", "User", "Computer", "OS", "Status", "Failures", "Log Snippet"]);
-    s.getRange("A1:G1").setFontWeight("bold").setBackground("#EFEFEF");
   }
-  return ss.getActiveSheet();
+  var s = ss.getActiveSheet();
+  if (s.getLastRow() === 0) {
+    s.appendRow(["Timestamp", "Event", "Student / User", "Computer", "Choice / Details", "Duration", "Failures", "OS", "Log File Link"]);
+    s.getRange("A1:I1").setFontWeight("bold").setBackground("#D9E1F2");
+    s.setFrozenRows(1);
+  }
+  return s;
 }
 
 function getOrCreateLogsFolder() {

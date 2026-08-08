@@ -60,16 +60,22 @@ function Save-Log {
     } catch {}
 }
 
+$installStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
 function Send-InstallationTelemetry([string]$status, [int]$failures=0, [hashtable]$extraData=@{}) {
     if (-not $TelemetryEndpoint -or $TelemetryEndpoint -eq "") { return }
     try {
         $fullLog = ($logEntries -join "`n")
+        $durSec = if ($installStopwatch) { [Math]::Round($installStopwatch.Elapsed.TotalSeconds, 1).ToString() + "s" } else { "" }
         $payload = @{
             timestamp     = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            event         = (if ($status -eq "SUCCESS") { "INSTALL_SUCCESS" } else { "INSTALL_FAILED" })
             user          = $env:USERNAME
             computer      = $env:COMPUTERNAME
             os            = ([System.Environment]::OSVersion.VersionString)
             status        = $status
+            choice        = "Portable Flutter & VS Code Installation"
+            duration      = $durSec
             checkFailures = $failures
             log           = $fullLog
         }
