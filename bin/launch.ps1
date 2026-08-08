@@ -1,16 +1,15 @@
 <#
 .SYNOPSIS
-    Environment Launcher for Southsea Cinema Coursework
+    Environment Launcher for Portable Flutter & VS Code Package
 #>
 
 $ScriptRoot = Split-Path -Parent $PSScriptRoot
 $ToolsDir   = "$ScriptRoot\tools"
 $VSCodeExe  = "$ScriptRoot\vscode\Code.exe"
-$Workspace  = "$ScriptRoot\workspace\southsea_cinema"
-$TemplateGit = "https://github.com/manighahrmani/southsea_cinema.git"
+$Workspace  = "$ScriptRoot\workspace\project"
 
 Write-Host "=========================================================" -ForegroundColor Cyan
-Write-Host "  Southsea Cinema Coursework Environment Launcher         " -ForegroundColor Cyan
+Write-Host "     Portable Flutter & VS Code Environment Launcher     " -ForegroundColor Cyan
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -25,7 +24,7 @@ function Initialize-StarterFlutterProject([string]$destPath) {
         Write-Host "Running 'flutter create'..." -ForegroundColor Green
         try {
             $parentDir = Split-Path -Parent $destPath
-            & flutter create --template=app --platforms=web,windows southsea_cinema
+            & flutter create --template=app --platforms=web,windows project
             if (Test-Path "$destPath\lib\main.dart") {
                 Write-Host "[OK] Flutter starter project created via CLI." -ForegroundColor Green
                 return
@@ -48,19 +47,19 @@ function Initialize-StarterFlutterProject([string]$destPath) {
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const SouthseaCinemaApp());
+  runApp(const StarterApp());
 }
 
-class SouthseaCinemaApp extends StatelessWidget {
-  const SouthseaCinemaApp({super.key});
+class StarterApp extends StatelessWidget {
+  const StarterApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Southsea Cinema',
+      title: 'Flutter Starter App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
       home: const HomePage(),
@@ -89,20 +88,20 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('🎬 Southsea Cinema Starter App'),
+        title: const Text('Flutter Starter App'),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Icon(Icons.movie_creation_outlined, size: 80, color: Colors.deepOrange),
+            const Icon(Icons.flutter_dash, size: 80, color: Colors.deepPurple),
             const SizedBox(height: 16),
             const Text(
-              'Welcome to Southsea Cinema Coursework!',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              'Welcome to Flutter!',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text('Tickets Booked:'),
+            const Text('You have pushed the button this many times:'),
             Text(
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
@@ -112,7 +111,7 @@ class _HomePageState extends State<HomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _incrementCounter,
-        tooltip: 'Book Ticket',
+        tooltip: 'Increment',
         child: const Icon(Icons.add),
       ),
     );
@@ -123,8 +122,8 @@ class _HomePageState extends State<HomePage> {
 
     # 2. pubspec.yaml
     $pubspec = @"
-name: southsea_cinema
-description: "Southsea Cinema Coursework Mobile App"
+name: flutter_app
+description: "A starter Flutter application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -166,8 +165,8 @@ linter:
   <base href="`$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Southsea Cinema Coursework App">
-  <title>Southsea Cinema</title>
+  <meta name="description" content="Flutter Application">
+  <title>Flutter App</title>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
@@ -178,14 +177,14 @@ linter:
 
     # 5. README.md
     $readme = @"
-# Southsea Cinema Coursework App
+# Flutter Application
 
-A Flutter application template for the Southsea Cinema coursework.
+A Flutter application created with the Portable Flutter & VS Code Environment.
 
 ## Getting Started
 
 1. Open this project in VS Code.
-2. Ensure device is set to Chrome in mobile view.
+2. Select Chrome or your connected device.
 3. Press **F5** or run `flutter run -d chrome`.
 "@
     $readme | Out-File -FilePath "$destPath\README.md" -Encoding utf8 -Force
@@ -246,7 +245,7 @@ if ($gitAvailable) {
     if (-not $userName -or -not $userEmail) {
         Write-Host ""
         Write-Host "--- Git Author Configuration (One-Time Setup) ---" -ForegroundColor Yellow
-        Write-Host "Please enter your name and email for your GitHub commits." -ForegroundColor White
+        Write-Host "Please enter your name and email for your Git commits." -ForegroundColor White
         Write-Host ""
 
         if (-not $userName) {
@@ -254,7 +253,7 @@ if ($gitAvailable) {
             if ($inputName) { & git config --global user.name "$inputName" }
         }
         if (-not $userEmail) {
-            $inputEmail = Read-Host "Enter your University or GitHub Email (e.g. up123456@myport.ac.uk)"
+            $inputEmail = Read-Host "Enter your Email (e.g. student@example.ac.uk)"
             if ($inputEmail) { & git config --global user.email "$inputEmail" }
         }
         Write-Host "[OK] Git author configuration updated." -ForegroundColor Green
@@ -274,13 +273,13 @@ if ($hasExistingValidProject) {
     Write-Host "  $Workspace" -ForegroundColor White
     Write-Host ""
     Write-Host "[1] Open existing project in VS Code (Default)" -ForegroundColor Green
-    Write-Host "[2] Clone your fork from GitHub (Enter URL)" -ForegroundColor Yellow
+    Write-Host "[2] Clone a repository from GitHub (Enter URL)" -ForegroundColor Yellow
     Write-Host "[3] Reset / Create fresh Flutter starter project" -ForegroundColor Red
     Write-Host ""
     $action = Read-Host "Choose an option [1-3] (Press Enter for 1)"
     
     if ($action -eq "2") {
-        $forkUrl = Read-Host "Paste your GitHub Fork URL (e.g. https://github.com/<username>/southsea_cinema)"
+        $forkUrl = Read-Host "Paste your GitHub Repository URL (e.g. https://github.com/<username>/<repo>)"
         if ($forkUrl) {
             Remove-Item $Workspace -Recurse -Force -ErrorAction SilentlyContinue
             Write-Host "Cloning $forkUrl..." -ForegroundColor Green
@@ -303,11 +302,11 @@ if ($hasExistingValidProject) {
     Write-Host "=========================================================" -ForegroundColor Yellow
     Write-Host "              Project Setup Options                      " -ForegroundColor Yellow
     Write-Host "=========================================================" -ForegroundColor Yellow
-    Write-Host "Do you have your own GitHub Fork URL?" -ForegroundColor White
-    Write-Host "  - Paste your fork URL: https://github.com/<username>/southsea_cinema" -ForegroundColor DarkGray
+    Write-Host "Do you have a GitHub Repository URL?" -ForegroundColor White
+    Write-Host "  - Paste your repo URL: https://github.com/<username>/<repo>" -ForegroundColor DarkGray
     Write-Host "  - Or press ENTER to automatically create a Flutter Starter App." -ForegroundColor Green
     Write-Host ""
-    $repoUrl = Read-Host "Fork URL (or press Enter for Starter App)"
+    $repoUrl = Read-Host "Repository URL (or press Enter for Starter App)"
 
     if ($repoUrl -and $repoUrl.Trim() -ne "") {
         Write-Host "Cloning from $repoUrl..." -ForegroundColor Green

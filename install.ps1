@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Installs the Portable VS Code + Flutter + SQLite development package for Southsea Cinema coursework.
+    Installs the Portable Flutter & VS Code development package.
 .DESCRIPTION
     Designed for non-admin University Lab Windows machines.
     Downloads and extracts the pre-configured package directly to the student's Downloads folder:
@@ -61,7 +61,7 @@ function Fail-Exit([string]$reason) {
 # ----------------- Start Installation -----------------
 Clear-Host
 Log-Message "=========================================================" "Cyan"
-Log-Message "  Southsea Cinema - Flutter & VS Code Environment Setup  " "Cyan"
+Log-Message "     Portable Flutter & VS Code Environment Setup        " "Cyan"
 Log-Message "=========================================================" "Cyan"
 Log-Message "Target Directory: $DestFolder" "DarkGray"
 Log-Message "Log File:         $LogPath" "DarkGray"
@@ -252,10 +252,10 @@ Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
 Log-Message "[4/4] Creating Desktop shortcut..." "Green"
 try {
     $WshShell = New-Object -ComObject WScript.Shell
-    $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\Southsea Cinema VS Code.lnk")
+    $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\Flutter VS Code.lnk")
     $Shortcut.TargetPath = "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat"
     $Shortcut.WorkingDirectory = $DestFolder
-    $Shortcut.Description = "Launch Southsea Cinema Flutter & VS Code Environment"
+    $Shortcut.Description = "Launch Portable Flutter & VS Code Environment"
     $Shortcut.IconLocation = "$DestFolder\vscode\Code.exe,0"
     $Shortcut.Save()
     Log-Message "Desktop shortcut created successfully." "DarkGray" $false
@@ -273,7 +273,7 @@ Log-Message ""
 Log-Message "=========================================================" "Green"
 Log-Message "  Setup completed successfully!                          " "Green"
 Log-Message "  Installed at: $DestFolder                              " "Green"
-Log-Message "  Shortcut:     Desktop -> 'Southsea Cinema VS Code'     " "Green"
+Log-Message "  Shortcut:     Desktop -> 'Flutter VS Code'             " "Green"
 Log-Message "=========================================================" "Green"
 Log-Message ""
 Log-Message "Starting environment..." "Cyan"

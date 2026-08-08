@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title Southsea Cinema - Portable Dev Environment
+title Portable Flutter and VS Code Environment
 
 :: Launch PowerShell runner
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0bin\launch.ps1"

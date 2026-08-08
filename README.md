@@ -1,4 +1,4 @@
-# Southsea Cinema - Portable Flutter & VS Code Environment
+# Portable Flutter & VS Code Environment
 
 A zero-install, portable development environment designed for university lab computers without administrative rights.
 

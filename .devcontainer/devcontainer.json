@@ -1,5 +1,5 @@
 {
-  "name": "Southsea Cinema (Flutter & SQLite)",
+  "name": "Flutter & SQLite Development Environment",
   "build": {
     "dockerfile": "Dockerfile"
   },
