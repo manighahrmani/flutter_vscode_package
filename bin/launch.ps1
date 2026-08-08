@@ -43,7 +43,7 @@ function Initialize-StarterFlutterProject([string]$destPath) {
     }
 
     # 1. lib/main.dart
-    $mainDart = @"
+    $mainDart = @'
 import 'package:flutter/material.dart';
 
 void main() {
@@ -117,11 +117,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-"@
+'@
     $mainDart | Out-File -FilePath "$destPath\lib\main.dart" -Encoding utf8 -Force
 
     # 2. pubspec.yaml
-    $pubspec = @"
+    $pubspec = @'
 name: flutter_app
 description: "A starter Flutter application"
 publish_to: 'none'
@@ -142,11 +142,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-"@
+'@
     $pubspec | Out-File -FilePath "$destPath\pubspec.yaml" -Encoding utf8 -Force
 
     # 3. analysis_options.yaml
-    $analysisOptions = @"
+    $analysisOptions = @'
 include: package:flutter_lints/flutter.yaml
 
 linter:
@@ -154,15 +154,15 @@ linter:
     prefer_const_constructors: true
     prefer_const_declarations: true
     avoid_print: false
-"@
+'@
     $analysisOptions | Out-File -FilePath "$destPath\analysis_options.yaml" -Encoding utf8 -Force
 
     # 4. web/index.html
-    $indexHtml = @"
+    $indexHtml = @'
 <!DOCTYPE html>
 <html>
 <head>
-  <base href="`$FLUTTER_BASE_HREF">
+  <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Flutter Application">
@@ -172,11 +172,11 @@ linter:
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
-"@
+'@
     $indexHtml | Out-File -FilePath "$destPath\web\index.html" -Encoding utf8 -Force
 
     # 5. README.md
-    $readme = @"
+    $readme = @'
 # Flutter Application
 
 A Flutter application created with the Portable Flutter & VS Code Environment.
@@ -184,9 +184,9 @@ A Flutter application created with the Portable Flutter & VS Code Environment.
 ## Getting Started
 
 1. Open this project in VS Code.
-2. Select Chrome or your connected device.
-3. Press **F5** or run `flutter run -d chrome`.
-"@
+2. Select Edge / Chrome or your connected device.
+3. Press **F5** or run `flutter run -d edge`.
+'@
     $readme | Out-File -FilePath "$destPath\README.md" -Encoding utf8 -Force
 
     # 6. .vscode/launch.json & .vscode/settings.json

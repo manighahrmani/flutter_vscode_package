@@ -132,6 +132,11 @@ Assert-Test "Starter Project Scaffold Generator Verification" {
         if ($LaunchContent -notmatch "pubspec\.yaml" -or $LaunchContent -notmatch "main\.dart") {
             throw "Starter generator does not define required Flutter core files"
         }
+        
+        # Verify that $_counter is preserved literally and not interpolated away by PowerShell
+        if (-not $LaunchContent.Contains('$_counter')) {
+            throw "Starter generator main.dart is missing `$_counter counter variable interpolation"
+        }
     }
     finally {
         if (Test-Path $TestTempDir) {
