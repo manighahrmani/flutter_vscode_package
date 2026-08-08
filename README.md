@@ -1,4 +1,4 @@
-# Portable Flutter & VS Code Environment
+# Portable Flutter & VS Code Package
 
 A zero-install, portable development environment designed for university lab computers without administrative rights.
 
