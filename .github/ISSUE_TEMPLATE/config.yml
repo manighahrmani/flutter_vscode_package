@@ -1,5 +1,5 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: Email Lecturer
     url: mailto:mani.ghahremani@port.ac.uk
-    about: Email your lecturer directly with your diagnostic log attached.
+    about: Email mani.ghahremani@port.ac.uk with flutter_vscode_install.log attached.

@@ -10,20 +10,9 @@ Open **PowerShell** on your lab computer and paste:
 irm https://raw.githubusercontent.com/manighahrmani/flutter_vscode_package/main/install.ps1 | iex
 ```
 
-## Troubleshooting & Reporting Issues
+## Troubleshooting
 
-If the installation or startup encounters an issue:
+If setup fails, find the log file in your Downloads folder: `flutter_vscode_install.log`
 
-1. **Locate your Diagnostic Log:**
-   - A log file is automatically saved to your **Downloads** folder:
-     `C:\Users\<username>\Downloads\flutter_vscode_install.log`
-
-2. **Option A: Open a GitHub Issue (Recommended)**
-   - Go to [GitHub Issues](https://github.com/manighahrmani/flutter_vscode_package/issues).
-   - Click **New Issue**.
-   - Paste your error message and drag & drop `flutter_vscode_install.log` into the issue description box.
-
-3. **Option B: Email your Lecturer**
-   - Email: `mani.ghahremani@port.ac.uk`
-   - Subject: `Flutter Setup Issue - <Your Username / Student ID>`
-   - Attach the `flutter_vscode_install.log` file from your Downloads folder.
+- Upload it to [GitHub Issues](https://github.com/manighahrmani/flutter_vscode_package/issues/new), or
+- Email it to `mani.ghahremani@port.ac.uk`

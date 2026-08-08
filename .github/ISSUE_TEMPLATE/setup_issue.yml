@@ -1,35 +1,17 @@
-name: 🐛 Setup or Installation Issue
-description: Report an issue with installing, extracting, or launching the Flutter & VS Code package
-title: "[Setup Issue]: "
-labels: ["bug", "installation"]
+name: Report Installation Issue
+description: Upload your log file to report a setup problem
+title: "Installation Issue"
+labels: ["installation"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for reporting an issue with the portable Flutter & VS Code package.
-        Please provide the requested details and attach your diagnostic log file.
-  - type: input
-    id: machine_info
-    attributes:
-      label: Lab Machine / PC Name
-      description: What is your PC or machine name? (e.g., CCI-BCPQB003777 or Personal Laptop)
-      placeholder: e.g. CCI-BCPQB003777
-    validations:
-      required: false
+        Please upload your diagnostic log file below.
   - type: textarea
-    id: error_description
-    attributes:
-      label: Error Details
-      description: Paste the exact error message or describe what happened when you ran the command.
-      placeholder: Paste error output here...
-    validations:
-      required: true
-  - type: textarea
-    id: diagnostic_log
+    id: log_file
     attributes:
       label: Diagnostic Log File
-      description: |
-        Please locate `flutter_vscode_install.log` in your **Downloads** folder (`C:\Users\<username>\Downloads\flutter_vscode_install.log`), then drag and drop the file here or paste its contents below.
-      placeholder: Drag and drop flutter_vscode_install.log or paste contents here...
+      description: Drag and drop the `flutter_vscode_install.log` file from your Downloads folder here.
+      placeholder: Drag and drop flutter_vscode_install.log here or paste its contents...
     validations:
       required: true

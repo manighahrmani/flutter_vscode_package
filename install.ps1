@@ -47,19 +47,12 @@ function Fail-Exit([string]$reason) {
     Write-Host "==========================================================================" -ForegroundColor Red
     Write-Host "Details: $reason" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "--- HOW TO REPORT THIS ISSUE ---" -ForegroundColor Cyan
-    Write-Host "A diagnostic log file has been saved to:" -ForegroundColor White
+    Write-Host "Your diagnostic log file is saved at:" -ForegroundColor White
     Write-Host "  $LogPath" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Option 1: Open an Issue on GitHub (Recommended)" -ForegroundColor White
-    Write-Host "  1. Visit: $IssuesUrl/new" -ForegroundColor Cyan
-    Write-Host "  2. Title your issue (e.g. 'Installation Failure - $env:COMPUTERNAME')" -ForegroundColor DarkGray
-    Write-Host "  3. Drag and drop the log file ($LogPath) into the issue description." -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "Option 2: Email your Lecturer directly" -ForegroundColor White
-    Write-Host "  1. Send an email to: $SupportEmail" -ForegroundColor Cyan
-    Write-Host "  2. Subject: Flutter Package Setup Issue - $env:USERNAME" -ForegroundColor DarkGray
-    Write-Host "  3. Attach the log file from your Downloads folder: flutter_vscode_install.log" -ForegroundColor DarkGray
+    Write-Host "To get help, choose one option:" -ForegroundColor White
+    Write-Host "  1. GitHub: Open $IssuesUrl/new and upload the log file." -ForegroundColor Cyan
+    Write-Host "  2. Email:  Send the log file to $SupportEmail" -ForegroundColor Cyan
     Write-Host "==========================================================================" -ForegroundColor Red
     Write-Host ""
     exit 1
