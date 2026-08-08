@@ -1,0 +1,41 @@
+{
+  "name": "Southsea Cinema (Flutter & SQLite)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.flutter",
+        "Dart-Code.dart",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "GitHub.vscode-pull-request-github",
+        "usernamehw.errorlens",
+        "pkief.material-icon-theme",
+        "qwtel.sqlite-viewer"
+      ],
+      "settings": {
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1000,
+        "dart.flutterSdkPath": "/home/vscode/flutter",
+        "editor.formatOnSave": true,
+        "[dart]": {
+          "editor.defaultFormatter": "Dart-Code.dart",
+          "editor.formatOnSave": true
+        },
+        "errorlens.enabled": true,
+        "workbench.iconTheme": "material-icon-theme"
+      }
+    }
+  },
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "Flutter Web App",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "flutter doctor -v && flutter pub get",
+  "remoteUser": "vscode"
+}

@@ -1,0 +1,51 @@
+{
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+
+  "dart.flutterSdkPath": "../../tools/flutter",
+  "dart.sdkPath": "../../tools/flutter/bin/cache/dart-sdk",
+  "dart.previewFlutterUiGuides": true,
+  "dart.flutterOutline": true,
+  "dart.openDevTools": "flutter",
+  "dart.runPubGetOnPubspecChanges": "prompt",
+  
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.rulers": [80],
+  "[dart]": {
+    "editor.defaultFormatter": "Dart-Code.dart",
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.selectionHighlight": false,
+    "editor.suggest.snippetsPreventQuickSuggestions": false
+  },
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit"
+  },
+
+  "errorlens.enabled": true,
+  "errorlens.fontSize": "12px",
+  "errorlens.fontStyleItalic": true,
+  "errorlens.statusBarIconsEnabled": true,
+
+  "workbench.iconTheme": "material-icon-theme",
+  "workbench.startupEditor": "readme",
+
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": true,
+
+  "github.copilot.enable": {
+    "*": true,
+    "yaml": true,
+    "plaintext": true,
+    "markdown": true
+  },
+
+  "extensions.autoUpdate": false,
+  "extensions.autoCheckUpdates": false,
+  "extensions.ignoreRecommendations": true,
+  "telemetry.telemetryLevel": "off",
+  "update.mode": "none"
+}
