@@ -4,7 +4,7 @@ A zero-install, portable development environment designed for university lab com
 
 ## Setup
 
-Open **PowerShell** on your lab computer and paste:
+Open **PowerShell** on your Windows computer and enter the following:
 
 ```powershell
 irm https://raw.githubusercontent.com/manighahrmani/flutter_vscode_package/main/install.ps1 | iex
