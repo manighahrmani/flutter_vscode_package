@@ -141,6 +141,26 @@ Assert-Test "Starter Project Scaffold Generator Verification" {
 }
 
 # ------------------------------------------------------------------------------
+# 5. Installer Verification Checks & PATH Logic Tests
+# ------------------------------------------------------------------------------
+Assert-Test "Installer - Verification Checks and PATH Configuration" {
+    $InstallContent = Get-Content "$ScriptRoot\install.ps1" -Raw
+    
+    # Verify PATH registry configuration
+    if ($InstallContent -notmatch '\[System\.Environment\]::SetEnvironmentVariable\("PATH"') {
+        throw "install.ps1 missing SetEnvironmentVariable PATH logic"
+    }
+    # Verify CLIs verification checks
+    if ($InstallContent -notmatch 'chkFlutter' -or $InstallContent -notmatch 'chkDart' -or $InstallContent -notmatch 'chkGit') {
+        throw "install.ps1 missing CLI verification checks"
+    }
+    # Verify extensions installation logic
+    if ($InstallContent -notmatch 'RequiredExtensions') {
+        throw "install.ps1 missing RequiredExtensions definition"
+    }
+}
+
+# ------------------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------------------
 Write-Host "`n-------------------------------------------------" -ForegroundColor Cyan

@@ -446,7 +446,10 @@ Write-Host ""
 Write-Host "Launching Portable VS Code in project folder..." -ForegroundColor Green
 
 if (Test-Path $VSCodeExe) {
-    Start-Process -FilePath $VSCodeExe -ArgumentList "`"$Workspace`"" -WorkingDirectory $ScriptRoot
+    $extDir = "$ScriptRoot\vscode\data\extensions"
+    $userDataDir = "$ScriptRoot\vscode\data\user-data"
+    $vscodeArgs = "--extensions-dir `"$extDir`" --user-data-dir `"$userDataDir`" `"$Workspace`""
+    Start-Process -FilePath $VSCodeExe -ArgumentList $vscodeArgs -WorkingDirectory $ScriptRoot
 } else {
     # If code.exe is on system PATH as fallback
     $sysCode = Get-Command code -ErrorAction SilentlyContinue
