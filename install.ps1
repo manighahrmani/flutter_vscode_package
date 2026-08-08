@@ -35,7 +35,7 @@ $UrlSQLite         = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3450300.z
 # Required Extensions
 $RequiredExtensions = @(
     "Dart-Code.flutter",
-    "Dart-Code.dart",
+    "Dart-Code.dart-code",
     "GitHub.copilot",
     "GitHub.vscode-pull-request-github",
     "usernamehw.errorlens",
@@ -370,7 +370,7 @@ $settingsContent = @"
   "editor.tabSize": 2,
   "editor.rulers": [80],
   "[dart]": {
-    "editor.defaultFormatter": "Dart-Code.dart",
+    "editor.defaultFormatter": "Dart-Code.dart-code",
     "editor.formatOnSave": true,
     "editor.formatOnType": true,
     "editor.selectionHighlight": false,
