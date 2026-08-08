@@ -476,6 +476,25 @@ foreach ($ext in $RequiredExtensions) {
     }
 }
 
+# 6.5 Lock down Extension Marketplace (Prevent installing further extensions)
+Log-Message "Locking down VS Code Extension Marketplace..." "DarkGray"
+$productJsonPath = "$VSCodeFolder\resources\app\product.json"
+if (Test-Path $productJsonPath) {
+    try {
+        $product = Get-Content $productJsonPath -Raw | ConvertFrom-Json
+        if ($product.PSObject.Properties['extensionsGallery']) {
+            $product.extensionsGallery.serviceUrl = ""
+            $product.extensionsGallery.itemUrl = ""
+            $product.extensionsGallery.controlUrl = ""
+            $product.extensionsGallery.resourceUrlTemplate = ""
+            $product | ConvertTo-Json -Depth 10 | Set-Content $productJsonPath -Encoding UTF8
+            Log-Message "[OK] Extension Marketplace disabled. Only pre-installed extensions are permitted." "Green"
+        }
+    } catch {
+        Log-Message "Notice: Could not modify product.json: $_" "DarkGray"
+    }
+}
+
 # 7. Configure PATH (Process & User Registry)
 Log-Message "[6/6] Configuring Environment & System PATH..." "Green"
 $pathsToAdd = @(

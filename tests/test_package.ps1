@@ -163,6 +163,10 @@ Assert-Test "Installer - Verification Checks and PATH Configuration" {
     if ($InstallContent -notmatch 'RequiredExtensions') {
         throw "install.ps1 missing RequiredExtensions definition"
     }
+    # Verify extension marketplace lockdown
+    if ($InstallContent -notmatch 'extensionsGallery') {
+        throw "install.ps1 missing extensionsGallery marketplace lockdown"
+    }
     # Verify extraction timing logic
     if ($InstallContent -notmatch 'extractStopwatch' -or $InstallContent -notmatch 'Send-InstallationTelemetry') {
         throw "install.ps1 missing extraction timing or telemetry logic"
