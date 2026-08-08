@@ -47,12 +47,19 @@ function Fail-Exit([string]$reason) {
     Write-Host "==========================================================================" -ForegroundColor Red
     Write-Host "Details: $reason" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "A diagnostic log has been saved to:" -ForegroundColor White
-    Write-Host "  $LogPath" -ForegroundColor Cyan
+    Write-Host "--- HOW TO REPORT THIS ISSUE ---" -ForegroundColor Cyan
+    Write-Host "A diagnostic log file has been saved to:" -ForegroundColor White
+    Write-Host "  $LogPath" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Please do one of the following:" -ForegroundColor White
-    Write-Host "  1. Email your lecturer: $SupportEmail (attach the log above)" -ForegroundColor Yellow
-    Write-Host "  2. Open an issue on GitHub: $IssuesUrl" -ForegroundColor Yellow
+    Write-Host "Option 1: Open an Issue on GitHub (Recommended)" -ForegroundColor White
+    Write-Host "  1. Visit: $IssuesUrl/new" -ForegroundColor Cyan
+    Write-Host "  2. Title your issue (e.g. 'Installation Failure - $env:COMPUTERNAME')" -ForegroundColor DarkGray
+    Write-Host "  3. Drag and drop the log file ($LogPath) into the issue description." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Option 2: Email your Lecturer directly" -ForegroundColor White
+    Write-Host "  1. Send an email to: $SupportEmail" -ForegroundColor Cyan
+    Write-Host "  2. Subject: Flutter Package Setup Issue - $env:USERNAME" -ForegroundColor DarkGray
+    Write-Host "  3. Attach the log file from your Downloads folder: flutter_vscode_install.log" -ForegroundColor DarkGray
     Write-Host "==========================================================================" -ForegroundColor Red
     Write-Host ""
     exit 1
@@ -175,7 +182,7 @@ $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
 if ($tarCmd) {
     Log-Message "Attempting Extraction Tier 1: Native tar.exe..." "DarkGray"
     try {
-        & tar.exe -xf $ZipPath -C "$env:USERPROFILE\Downloads" 2>&1 | Out-Null
+        & tar.exe -xf $ZipPath -C $DestFolder 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0 -and (Test-Path "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat")) {
             $extracted = $true
             Log-Message "Extraction Tier 1 (tar.exe) succeeded." "DarkGray" $false
@@ -185,12 +192,28 @@ if ($tarCmd) {
     }
 }
 
-# Extraction Tier 2: .NET ZipFile API (Fast, Reliable Contingency)
+# Extraction Tier 2: .NET ZipFile API (Fast, Reliable Contingency with Overwrite)
 if (-not $extracted) {
     Log-Message "Attempting Extraction Tier 2: .NET ZipFile API..." "Yellow"
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, "$env:USERPROFILE\Downloads")
+        $zipArchive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        foreach ($entry in $zipArchive.Entries) {
+            $targetPath = Join-Path $DestFolder $entry.FullName
+            if ([string]::IsNullOrEmpty($entry.Name)) {
+                # Directory entry
+                if (-not (Test-Path $targetPath)) {
+                    New-Item -ItemType Directory -Path $targetPath -Force -ErrorAction SilentlyContinue | Out-Null
+                }
+            } else {
+                $entryDir = Split-Path -Parent $targetPath
+                if (-not (Test-Path $entryDir)) {
+                    New-Item -ItemType Directory -Path $entryDir -Force -ErrorAction SilentlyContinue | Out-Null
+                }
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
+            }
+        }
+        $zipArchive.Dispose()
         if (Test-Path "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat") {
             $extracted = $true
             Log-Message "Extraction Tier 2 (.NET ZipFile) succeeded." "DarkGray" $false
@@ -206,7 +229,7 @@ if (-not $extracted) {
     try {
         $oldProgress = $ProgressPreference
         $ProgressPreference = 'SilentlyContinue'
-        Expand-Archive -Path $ZipPath -DestinationPath "$env:USERPROFILE\Downloads" -Force -ErrorAction Stop
+        Expand-Archive -Path $ZipPath -DestinationPath $DestFolder -Force -ErrorAction Stop
         $ProgressPreference = $oldProgress
         if (Test-Path "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat") {
             $extracted = $true
@@ -223,7 +246,7 @@ if (-not $extracted) {
     try {
         $shell = New-Object -ComObject Shell.Application
         $zipPackage = $shell.NameSpace($ZipPath)
-        $destination = $shell.NameSpace("$env:USERPROFILE\Downloads")
+        $destination = $shell.NameSpace($DestFolder)
         $destination.CopyHere($zipPackage.Items(), 16) # 16 = Respond 'Yes to All'
         if (Test-Path "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat") {
             $extracted = $true
