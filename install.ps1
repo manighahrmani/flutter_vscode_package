@@ -107,12 +107,13 @@ if ($curlCmd) {
     if (Test-Path $TempZip) { Remove-Item $TempZip -Force -ErrorAction SilentlyContinue }
     try {
         & curl.exe -L -C - --retry 3 --retry-delay 2 -o $TempZip --progress-bar $DownloadUrl
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000) {
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 100) {
             Move-Item -Path $TempZip -Destination $ZipPath -Force
             $downloadSucceeded = $true
-            Log-Message "curl.exe download completed successfully." "DarkGray" $false
+            Log-Message "curl.exe download completed ($((Get-Item $ZipPath).Length) bytes)." "DarkGray" $false
         } else {
-            Log-Message "curl.exe returned exit code $LASTEXITCODE or small file. Falling back to PowerShell WebClient..." "DarkYellow"
+            $sz = if (Test-Path $TempZip) { (Get-Item $TempZip).Length } else { 0 }
+            Log-Message "curl.exe returned code $LASTEXITCODE (size: $sz bytes). Falling back to WebClient..." "DarkYellow"
         }
     } catch {
         Log-Message "curl.exe failed: $_" "DarkYellow"
@@ -126,9 +127,9 @@ if (-not $downloadSucceeded) {
         $webClient = New-Object System.Net.WebClient
         $webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
         $webClient.DownloadFile($DownloadUrl, $ZipPath)
-        if ((Test-Path $ZipPath) -and (Get-Item $ZipPath).Length -gt 1000) {
+        if ((Test-Path $ZipPath) -and (Get-Item $ZipPath).Length -gt 100) {
             $downloadSucceeded = $true
-            Log-Message ".NET WebClient download completed successfully." "DarkGray" $false
+            Log-Message ".NET WebClient download completed ($((Get-Item $ZipPath).Length) bytes)." "DarkGray" $false
         }
     } catch {
         Log-Message "WebClient download failed: $_" "DarkYellow"
@@ -140,7 +141,7 @@ if (-not $downloadSucceeded) {
     Log-Message "Using Invoke-WebRequest contingency..." "Yellow"
     try {
         Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing -ErrorAction Stop
-        if ((Test-Path $ZipPath) -and (Get-Item $ZipPath).Length -gt 1000000) {
+        if ((Test-Path $ZipPath) -and (Get-Item $ZipPath).Length -gt 100) {
             $downloadSucceeded = $true
             Log-Message "Invoke-WebRequest completed successfully." "DarkGray" $false
         }
