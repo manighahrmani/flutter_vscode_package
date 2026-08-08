@@ -107,7 +107,7 @@ if ($curlCmd) {
     if (Test-Path $TempZip) { Remove-Item $TempZip -Force -ErrorAction SilentlyContinue }
     try {
         & curl.exe -L -C - --retry 3 --retry-delay 2 -o $TempZip --progress-bar $DownloadUrl
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000000) {
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000) {
             Move-Item -Path $TempZip -Destination $ZipPath -Force
             $downloadSucceeded = $true
             Log-Message "curl.exe download completed successfully." "DarkGray" $false
@@ -126,7 +126,7 @@ if (-not $downloadSucceeded) {
         $webClient = New-Object System.Net.WebClient
         $webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
         $webClient.DownloadFile($DownloadUrl, $ZipPath)
-        if ((Test-Path $ZipPath) -and (Get-Item $ZipPath).Length -gt 1000000) {
+        if ((Test-Path $ZipPath) -and (Get-Item $ZipPath).Length -gt 1000) {
             $downloadSucceeded = $true
             Log-Message ".NET WebClient download completed successfully." "DarkGray" $false
         }
