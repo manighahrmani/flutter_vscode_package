@@ -345,6 +345,17 @@ $pkgZip = "$env:TEMP\flutter_vscode_pkg.zip"
 if (Download-FileWithRetry $UrlPackageRelease $pkgZip "Package Template") {
     Extract-ZipArchive $pkgZip $DestFolder "Base Launcher & Config Template" | Out-Null
     Remove-Item $pkgZip -Force -ErrorAction SilentlyContinue
+
+    # Auto-flatten nested subfolder if present in archive
+    $nestedDir = Join-Path $DestFolder "flutter_vscode_package"
+    if (Test-Path $nestedDir) {
+        Get-ChildItem -Path $nestedDir -Force | ForEach-Object {
+            $destItem = Join-Path $DestFolder $_.Name
+            if (Test-Path $destItem) { Remove-Item $destItem -Recurse -Force -ErrorAction SilentlyContinue }
+            Move-Item -Path $_.FullName -Destination $DestFolder -Force
+        }
+        Remove-Item $nestedDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # Ensure VS Code Settings file is in place
@@ -467,9 +478,17 @@ $userDataDir = "$VSCodeFolder\data\user-data"
 
 foreach ($ext in $RequiredExtensions) {
     Log-Message "Installing extension: $ext..." "DarkGray"
-    try {
-        & $codeCmd --extensions-dir $extDir --user-data-dir $userDataDir --install-extension $ext --force 2>&1 | Out-Null
-    } catch {
+    $installed = $false
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        try {
+            & $codeCmd --extensions-dir $extDir --user-data-dir $userDataDir --install-extension $ext --force 2>&1 | Out-Null
+            $installed = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    if (-not $installed) {
         Log-Message "Warning: Failed to install extension $ext via CLI: $_" "DarkYellow"
     }
 }
@@ -648,6 +667,24 @@ if ($CheckFailures -gt 0) {
 
 # ----------------- Finish & Launch -----------------
 $launcherBat = "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat"
+
+# Ensure batch launcher exists
+if (-not (Test-Path $launcherBat)) {
+    $batContent = @"
+@echo off
+setlocal
+cd /d "%~dp0"
+title Flutter VS Code Portable
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "bin\launch.ps1"
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo Launch error occurred. Press any key to exit...
+    pause >nul
+)
+"@
+    [System.IO.File]::WriteAllText($launcherBat, $batContent, [System.Text.Encoding]::ASCII)
+}
+
 Log-Message "=========================================================" "Green"
 Log-Message "  Installation & Verification Completed Successfully!   " "Green"
 Log-Message "  Installed at: $DestFolder                              " "Green"
@@ -658,4 +695,11 @@ Log-Message "Launching Portable Flutter & VS Code Environment..." "Cyan"
 
 Save-Log
 Send-InstallationTelemetry "SUCCESS" 0 @{}
-Start-Process -FilePath $launcherBat -WorkingDirectory $DestFolder
+
+# Launch VS Code with workspace directly for 100% reliable startup
+if (Test-Path "$VSCodeFolder\Code.exe") {
+    $workspaceDir = "$DestFolder\workspace"
+    Start-Process -FilePath "$VSCodeFolder\Code.exe" -ArgumentList "`"$workspaceDir`"" -WorkingDirectory $DestFolder
+} elseif (Test-Path $launcherBat) {
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$launcherBat`"" -WorkingDirectory $DestFolder
+}
