@@ -6,7 +6,7 @@
 $ScriptRoot = Split-Path -Parent $PSScriptRoot
 $ToolsDir   = "$ScriptRoot\tools"
 $VSCodeExe  = "$ScriptRoot\vscode\Code.exe"
-$Workspace  = "$ScriptRoot\workspace\project"
+$Workspace  = "$ScriptRoot\workspace"
 $TelemetryEndpoint = "https://script.google.com/macros/s/AKfycbx4ztCT_U7XE9sNUFy4GNI5rvmptu_r1I20CoPbIZSy9a72ZaeZeIfRFY39X9NFpZA/exec"
 
 $launchStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -73,10 +73,12 @@ function Initialize-StarterFlutterProject([string]$destPath) {
     # Attempt flutter create if flutter CLI is available
     $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
     if ($flutterCmd) {
-        Write-Host "Running 'flutter create'..." -ForegroundColor Green
+        Write-Host "Running 'flutter create --platforms=web'..." -ForegroundColor Green
         try {
-            $parentDir = Split-Path -Parent $destPath
-            & flutter create --template=app --platforms=web,windows project
+            if (-not (Test-Path $destPath)) {
+                New-Item -Path $destPath -ItemType Directory -Force | Out-Null
+            }
+            & flutter create --template=app --platforms=web --project-name=flutter_app "$destPath"
             if (Test-Path "$destPath\lib\main.dart") {
                 Write-Host "[OK] Flutter starter project created via CLI." -ForegroundColor Green
                 return
@@ -532,8 +534,12 @@ if (Test-Path $VSCodeExe) {
 
     $extDir = "$ScriptRoot\vscode\data\extensions"
     $userDataDir = "$ScriptRoot\vscode\data\user-data"
-    $vscodeArgs = "--extensions-dir `"$extDir`" --user-data-dir `"$userDataDir`" `"$Workspace`""
-    Start-Process -FilePath $VSCodeExe -ArgumentList $vscodeArgs -WorkingDirectory $ScriptRoot
+    $vscodeArgs = @(
+        "--extensions-dir", $extDir,
+        "--user-data-dir", $userDataDir,
+        $Workspace
+    )
+    Start-Process -FilePath $VSCodeExe -ArgumentList $vscodeArgs -WorkingDirectory $ScriptRoot -WindowStyle Normal
 } else {
     # If code.exe is on system PATH as fallback
     $sysCode = Get-Command code -ErrorAction SilentlyContinue

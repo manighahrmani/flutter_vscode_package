@@ -413,7 +413,13 @@ $settingsContent = @"
   "extensions.autoCheckUpdates": false,
   "extensions.ignoreRecommendations": true,
   "telemetry.telemetryLevel": "off",
-  "update.mode": "none"
+  "update.mode": "none",
+
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+  "security.workspace.trust.banner": "never",
+  "security.workspace.trust.emptyWindow": false,
+  "security.workspace.trust.untrustedFiles": "open"
 }
 "@
 $settingsContent | Out-File -FilePath $settingsFile -Encoding utf8 -Force
@@ -643,10 +649,10 @@ if ($missingExts.Count -eq 0) {
 if (Test-Path $settingsFile) {
     try {
         $parsed = Get-Content $settingsFile -Raw | ConvertFrom-Json
-        if ($parsed.'dart.defaultFlutterDevice' -eq "edge" -and $parsed.'files.autoSave' -eq "afterDelay") {
-            Log-Message "[PASS] VS Code Settings verified (AutoSave + Edge Target Device)." "Green"
+        if ($parsed.'dart.defaultFlutterDevice' -eq "edge" -and $parsed.'files.autoSave' -eq "afterDelay" -and $parsed.'security.workspace.trust.enabled' -eq $false) {
+            Log-Message "[PASS] VS Code Settings verified (AutoSave + Edge Target Device + Workspace Trust Disabled)." "Green"
         } else {
-            Log-Message "[FAIL] VS Code Settings missing required Flutter/Edge parameters!" "Red"
+            Log-Message "[FAIL] VS Code Settings missing required Flutter/Edge/Trust parameters!" "Red"
             $CheckFailures++
         }
     } catch {
@@ -685,6 +691,193 @@ if %ERRORLEVEL% NEQ 0 (
     [System.IO.File]::WriteAllText($launcherBat, $batContent, [System.Text.Encoding]::ASCII)
 }
 
+# Ensure Starter Flutter Web Project exists in workspace folder
+$workspaceDir = "$DestFolder\workspace"
+if (-not (Test-Path "$workspaceDir\pubspec.yaml")) {
+    Log-Message "Generating starter Flutter Web project in workspace..." "DarkGray"
+    if (-not (Test-Path "$workspaceDir\lib")) { New-Item -Path "$workspaceDir\lib" -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path "$workspaceDir\web")) { New-Item -Path "$workspaceDir\web" -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path "$workspaceDir\.vscode")) { New-Item -Path "$workspaceDir\.vscode" -ItemType Directory -Force | Out-Null }
+    
+    # 1. lib/main.dart
+    $mainDart = @'
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(const StarterApp());
+}
+
+class StarterApp extends StatelessWidget {
+  const StarterApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Flutter Starter App',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: const HomePage(),
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _counter = 0;
+
+  void _incrementCounter() {
+    setState(() {
+      _counter++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text('Flutter Starter App'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Icon(Icons.flutter_dash, size: 80, color: Colors.deepPurple),
+            const SizedBox(height: 16),
+            const Text(
+              'Welcome to Flutter!',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('You have pushed the button this many times:'),
+            Text(
+              '$_counter',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+'@
+    $mainDart | Out-File -FilePath "$workspaceDir\lib\main.dart" -Encoding utf8 -Force
+
+    # 2. pubspec.yaml
+    $pubspec = @'
+name: flutter_app
+description: "A starter Flutter application"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+'@
+    $pubspec | Out-File -FilePath "$workspaceDir\pubspec.yaml" -Encoding utf8 -Force
+
+    # 3. analysis_options.yaml
+    $analysisOptions = @'
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    avoid_print: false
+'@
+    $analysisOptions | Out-File -FilePath "$workspaceDir\analysis_options.yaml" -Encoding utf8 -Force
+
+    # 4. web/index.html
+    $indexHtml = @'
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Flutter Application">
+  <title>Flutter App</title>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+'@
+    $indexHtml | Out-File -FilePath "$workspaceDir\web\index.html" -Encoding utf8 -Force
+
+    # 5. README.md
+    $readme = @'
+# Flutter Application
+
+A Flutter application created with the Portable Flutter & VS Code Environment.
+
+## Getting Started
+
+1. Open this project in VS Code.
+2. Select Edge / Chrome from the bottom status bar.
+3. Press **F5** or run `flutter run -d edge`.
+'@
+    $readme | Out-File -FilePath "$workspaceDir\README.md" -Encoding utf8 -Force
+
+    # 6. .vscode/launch.json & .vscode/settings.json
+    $launchJson = @'
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter (Edge)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "edge"
+    },
+    {
+      "name": "Flutter (Chrome / Default)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome"
+    }
+  ]
+}
+'@
+    $launchJson | Out-File -FilePath "$workspaceDir\.vscode\launch.json" -Encoding utf8 -Force
+
+    $projSettings = @'
+{
+  "dart.defaultFlutterDevice": "edge",
+  "dart.flutterSelectDeviceWhenConnected": false,
+  "dart.runPubGetOnPubspecChanges": "always"
+}
+'@
+    $projSettings | Out-File -FilePath "$workspaceDir\.vscode\settings.json" -Encoding utf8 -Force
+}
+
 Log-Message "=========================================================" "Green"
 Log-Message "  Installation & Verification Completed Successfully!   " "Green"
 Log-Message "  Installed at: $DestFolder                              " "Green"
@@ -696,10 +889,16 @@ Log-Message "Launching Portable Flutter & VS Code Environment..." "Cyan"
 Save-Log
 Send-InstallationTelemetry "SUCCESS" 0 @{}
 
-# Launch VS Code with workspace directly for 100% reliable startup
+# Launch Portable VS Code with properly configured extensions and user-data directories
 if (Test-Path "$VSCodeFolder\Code.exe") {
-    $workspaceDir = "$DestFolder\workspace"
-    Start-Process -FilePath "$VSCodeFolder\Code.exe" -ArgumentList "`"$workspaceDir`"" -WorkingDirectory $DestFolder
+    $extDir = "$VSCodeFolder\data\extensions"
+    $userDataDir = "$VSCodeFolder\data\user-data"
+    $vscodeArgs = @(
+        "--extensions-dir", $extDir,
+        "--user-data-dir", $userDataDir,
+        $workspaceDir
+    )
+    Start-Process -FilePath "$VSCodeFolder\Code.exe" -ArgumentList $vscodeArgs -WorkingDirectory $DestFolder -WindowStyle Normal
 } elseif (Test-Path $launcherBat) {
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$launcherBat`"" -WorkingDirectory $DestFolder
 }
