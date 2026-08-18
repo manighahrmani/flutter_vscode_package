@@ -379,6 +379,25 @@ function Invoke-ProjectPreparation([string]$destPath) {
 '@
     $projLaunch | Out-File -FilePath $launchFile -Encoding utf8 -Force
 
+    # Ensure sqlite3.wasm is deployed to web/ if project uses SQLite (sqflite)
+    if ((Test-Path "$destPath\pubspec.yaml") -and ((Get-Content "$destPath\pubspec.yaml" -Raw) -match "sqflite")) {
+        $webDir = "$destPath\web"
+        if (-not (Test-Path $webDir)) { New-Item -Path $webDir -ItemType Directory -Force | Out-Null }
+        if (-not (Test-Path "$webDir\sqlite3.wasm")) {
+            $sqliteWasmSource = "$ToolsDir\sqlite\sqlite3.wasm"
+            if (Test-Path $sqliteWasmSource) {
+                Copy-Item -Path $sqliteWasmSource -Destination "$webDir\sqlite3.wasm" -Force
+                Write-Host "[OK] SQLite WebAssembly runtime (sqlite3.wasm) deployed to web directory." -ForegroundColor Green
+            } else {
+                try {
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                    Invoke-WebRequest -Uri "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-2.4.6/sqlite3.wasm" -OutFile "$webDir\sqlite3.wasm" -TimeoutSec 15
+                    Write-Host "[OK] Downloaded sqlite3.wasm to web directory." -ForegroundColor Green
+                } catch {}
+            }
+        }
+    }
+
     # Run flutter pub get / dart pub get automatically
     Write-Host ""
     Write-Host "=========================================================" -ForegroundColor Cyan

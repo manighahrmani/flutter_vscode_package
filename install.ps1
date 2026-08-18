@@ -437,6 +437,10 @@ if (-not (Test-Path "$ToolsFolder\sqlite\sqlite3.exe")) {
         Remove-Item $sqliteZip -Force -ErrorAction SilentlyContinue
     }
 }
+if (-not (Test-Path "$ToolsFolder\sqlite\sqlite3.wasm")) {
+    $UrlSQLiteWasm = "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-2.4.6/sqlite3.wasm"
+    Download-FileWithRetry $UrlSQLiteWasm "$ToolsFolder\sqlite\sqlite3.wasm" "SQLite WebAssembly Binary (sqlite3.wasm)" | Out-Null
+}
 Log-Message "[OK] Git and SQLite CLI tools ready." "Green"
 
 # 6. Install VS Code Extensions
