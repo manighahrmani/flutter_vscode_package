@@ -22,3 +22,9 @@ This applies to code files, configuration files, test suites, and documentation.
 - Keep replies to the absolute minimum.
 - Do not ramble, over-explain, or provide lengthy detailed outputs unless explicitly requested.
 - State findings, actions, and solutions directly and concisely.
+
+## Strict Formatting & Emoji Prohibition
+
+- NEVER use emojis anywhere for visual decoration, fun, or flair.
+- No emojis in agent responses, READMEs, source code, commit messages, comments, UI text, logs, or documentation.
+- Only plain text, Markdown, and standard alphanumeric characters are permitted.

@@ -271,25 +271,23 @@ linter:
 
     # 5. README.md
     $readme = @'
-# 🚀 Flutter Web Starter App
+# Flutter Web Starter App
 
-Welcome to your portable Flutter development environment! Your project is already loaded and ready to run.
+Welcome to your portable Flutter development environment. The project is loaded and ready to run.
 
-## 🎯 How to Run Your App
+## Running the Application
 
-1. **Select Target Device**: Verify that **Edge** (or Chrome) is selected in the bottom blue status bar (it is pre-configured as the default).
-2. **Start Debugging**: Press <kbd>F5</kbd> (or click **Run > Start Debugging** from the top menu).
-   - Alternatively, open the built-in terminal (<kbd>Ctrl</kbd> + <kbd>`</kbd>) and run:
-     ```bash
+1. Verify Edge (or Chrome) is selected in the bottom status bar.
+2. Press F5 (or click Run > Start Debugging).
+   - Alternatively, execute in the terminal:
      flutter run -d edge
-     ```
-3. **Instant Hot Reload**: Save any changes in [`lib/main.dart`](file:///lib/main.dart) while running, or press <kbd>r</kbd> in the terminal to instantly see your updates live in the browser!
+3. Hot reload: Save lib/main.dart or press "r" in the debug terminal while running.
 
-## 📁 Key Files
+## Project Structure
 
-- `lib/main.dart` — Your application widget tree and UI entry point.
-- `pubspec.yaml` — Dependencies and package configuration.
-- `web/index.html` — The HTML shell hosting the Flutter Web build.
+- lib/main.dart: Application entry point and widget tree.
+- pubspec.yaml: Dependencies and configuration.
+- web/index.html: Web host container.
 '@
     $readme | Out-File -FilePath "$destPath\README.md" -Encoding utf8 -Force
 
