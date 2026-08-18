@@ -717,8 +717,8 @@ class _HomePageState extends State<HomePage> {
             const Icon(Icons.flutter_dash, size: 80, color: Colors.deepPurple),
             const SizedBox(height: 16),
             const Text(
-              'Welcome to Flutter!',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              'Welcome to Flutter Web!',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text('You have pushed the button this many times:'),
@@ -743,7 +743,7 @@ class _HomePageState extends State<HomePage> {
     # 2. pubspec.yaml
     $pubspec = @'
 name: flutter_app
-description: "A starter Flutter application"
+description: "A starter Flutter Web application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -797,15 +797,25 @@ linter:
 
     # 5. README.md
     $readme = @'
-# Flutter Application
+# 🚀 Flutter Web Starter App
 
-A Flutter application created with the Portable Flutter & VS Code Environment.
+Welcome to your portable Flutter development environment! Your project is already loaded and ready to run.
 
-## Getting Started
+## 🎯 How to Run Your App
 
-1. Open this project in VS Code.
-2. Select Edge / Chrome from the bottom status bar.
-3. Press **F5** or run `flutter run -d edge`.
+1. **Select Target Device**: Verify that **Edge** (or Chrome) is selected in the bottom blue status bar (it is pre-configured as the default).
+2. **Start Debugging**: Press <kbd>F5</kbd> (or click **Run > Start Debugging** from the top menu).
+   - Alternatively, open the built-in terminal (<kbd>Ctrl</kbd> + <kbd>`</kbd>) and run:
+     ```bash
+     flutter run -d edge
+     ```
+3. **Instant Hot Reload**: Save any changes in [`lib/main.dart`](file:///lib/main.dart) while running, or press <kbd>r</kbd> in the terminal to instantly see your updates live in the browser!
+
+## 📁 Key Files
+
+- `lib/main.dart` — Your application widget tree and UI entry point.
+- `pubspec.yaml` — Dependencies and package configuration.
+- `web/index.html` — The HTML shell hosting the Flutter Web build.
 '@
     $readme | Out-File -FilePath "$workspaceDir\README.md" -Encoding utf8 -Force
 
@@ -835,10 +845,40 @@ A Flutter application created with the Portable Flutter & VS Code Environment.
 {
   "dart.defaultFlutterDevice": "edge",
   "dart.flutterSelectDeviceWhenConnected": false,
-  "dart.runPubGetOnPubspecChanges": "always"
+  "dart.runPubGetOnPubspecChanges": "always",
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+  "security.workspace.trust.banner": "never"
 }
 '@
     $projSettings | Out-File -FilePath "$workspaceDir\.vscode\settings.json" -Encoding utf8 -Force
+
+    # Automatically resolve dependencies via portable Flutter CLI
+    $portableFlutterBat = "$DestFolder\tools\flutter\bin\flutter.bat"
+    $portableDartExe = "$DestFolder\tools\flutter\bin\cache\dart-sdk\bin\dart.exe"
+    if (Test-Path $portableFlutterBat) {
+        Log-Message "Resolving starter project dependencies (flutter pub get)..." "Cyan"
+        try {
+            Push-Location $workspaceDir
+            & $portableFlutterBat pub get 2>&1 | Out-Null
+            Pop-Location
+            Log-Message "[OK] Dependencies resolved successfully." "Green"
+        } catch {
+            Log-Message "[WARN] flutter pub get: $_" "Yellow"
+            Pop-Location
+        }
+    } elseif (Test-Path $portableDartExe) {
+        Log-Message "Resolving starter project dependencies (dart pub get)..." "Cyan"
+        try {
+            Push-Location $workspaceDir
+            & $portableDartExe pub get 2>&1 | Out-Null
+            Pop-Location
+            Log-Message "[OK] Dependencies resolved successfully." "Green"
+        } catch {
+            Log-Message "[WARN] dart pub get: $_" "Yellow"
+            Pop-Location
+        }
+    }
 }
 
 Log-Message "=========================================================" "Green"

@@ -60,6 +60,40 @@ try {
     } catch {}
 }
 
+# ----------------- Environment Configuration -----------------
+$toolsPath = @(
+    "$ToolsDir\flutter\bin",
+    "$ToolsDir\flutter\bin\cache\dart-sdk\bin",
+    "$ToolsDir\git\cmd",
+    "$ToolsDir\git\bin",
+    "$ToolsDir\sqlite",
+    "$ScriptRoot\vscode\bin"
+)
+foreach ($p in $toolsPath) {
+    if ((Test-Path $p) -and ($env:Path -notlike "*$p*")) {
+        $env:Path = "$p;$env:Path"
+    }
+}
+
+# Configure Edge as Default Web Browser Device
+$edgeCandidates = @(
+    "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+    "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe"
+)
+$detectedEdge = $null
+foreach ($b in $edgeCandidates) {
+    if (Test-Path $b) {
+        $detectedEdge = $b
+        break
+    }
+}
+
+if ($detectedEdge) {
+    $env:CHROME_EXECUTABLE = $detectedEdge
+    $env:FLUTTER_WEB_BROWSER = "edge"
+}
+
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host "     Portable Flutter & VS Code Environment Launcher     " -ForegroundColor Cyan
 Write-Host "=========================================================" -ForegroundColor Cyan
@@ -71,14 +105,20 @@ function Initialize-StarterFlutterProject([string]$destPath) {
     Write-Host "  $destPath" -ForegroundColor White
 
     # Attempt flutter create if flutter CLI is available
-    $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+    $flutterBat = "$ToolsDir\flutter\bin\flutter.bat"
+    $flutterCmd = if (Test-Path $flutterBat) { 
+        $flutterBat 
+    } else { 
+        $sysCmd = Get-Command flutter -ErrorAction SilentlyContinue
+        if ($sysCmd) { $sysCmd.Source } else { $null }
+    }
     if ($flutterCmd) {
         Write-Host "Running 'flutter create --platforms=web'..." -ForegroundColor Green
         try {
             if (-not (Test-Path $destPath)) {
                 New-Item -Path $destPath -ItemType Directory -Force | Out-Null
             }
-            & flutter create --template=app --platforms=web --project-name=flutter_app "$destPath"
+            & $flutterCmd create --template=app --platforms=web --project-name=flutter_app "$destPath"
             if (Test-Path "$destPath\lib\main.dart") {
                 Write-Host "[OK] Flutter starter project created via CLI." -ForegroundColor Green
                 return
@@ -151,8 +191,8 @@ class _HomePageState extends State<HomePage> {
             const Icon(Icons.flutter_dash, size: 80, color: Colors.deepPurple),
             const SizedBox(height: 16),
             const Text(
-              'Welcome to Flutter!',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              'Welcome to Flutter Web!',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text('You have pushed the button this many times:'),
@@ -177,7 +217,7 @@ class _HomePageState extends State<HomePage> {
     # 2. pubspec.yaml
     $pubspec = @'
 name: flutter_app
-description: "A starter Flutter application"
+description: "A starter Flutter Web application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -231,15 +271,25 @@ linter:
 
     # 5. README.md
     $readme = @'
-# Flutter Application
+# 🚀 Flutter Web Starter App
 
-A Flutter application created with the Portable Flutter & VS Code Environment.
+Welcome to your portable Flutter development environment! Your project is already loaded and ready to run.
 
-## Getting Started
+## 🎯 How to Run Your App
 
-1. Open this project in VS Code.
-2. Select Edge / Chrome or your connected device.
-3. Press **F5** or run `flutter run -d edge`.
+1. **Select Target Device**: Verify that **Edge** (or Chrome) is selected in the bottom blue status bar (it is pre-configured as the default).
+2. **Start Debugging**: Press <kbd>F5</kbd> (or click **Run > Start Debugging** from the top menu).
+   - Alternatively, open the built-in terminal (<kbd>Ctrl</kbd> + <kbd>`</kbd>) and run:
+     ```bash
+     flutter run -d edge
+     ```
+3. **Instant Hot Reload**: Save any changes in [`lib/main.dart`](file:///lib/main.dart) while running, or press <kbd>r</kbd> in the terminal to instantly see your updates live in the browser!
+
+## 📁 Key Files
+
+- `lib/main.dart` — Your application widget tree and UI entry point.
+- `pubspec.yaml` — Dependencies and package configuration.
+- `web/index.html` — The HTML shell hosting the Flutter Web build.
 '@
     $readme | Out-File -FilePath "$destPath\README.md" -Encoding utf8 -Force
 
@@ -271,7 +321,11 @@ A Flutter application created with the Portable Flutter & VS Code Environment.
     $workspaceSettings = @"
 {
   "dart.defaultFlutterDevice": "edge",
-  "dart.runPubGetOnPubspecChanges": "always"
+  "dart.flutterSelectDeviceWhenConnected": false,
+  "dart.runPubGetOnPubspecChanges": "always",
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+  "security.workspace.trust.banner": "never"
 }
 "@
     $workspaceSettings | Out-File -FilePath "$destPath\.vscode\settings.json" -Encoding utf8 -Force
@@ -279,13 +333,13 @@ A Flutter application created with the Portable Flutter & VS Code Environment.
     Write-Host "[OK] Complete Flutter Starter project generated with Edge device configuration." -ForegroundColor Green
 }
 
-# Helper: Pre-warms and runs pub get, ensures Edge device configuration in any project
+# Helper: Pre-warms and automatically runs pub get, ensures Edge device and trust configuration
 function Invoke-ProjectPreparation([string]$destPath) {
     if (-not (Test-Path "$destPath\pubspec.yaml")) {
         return
     }
 
-    # Ensure .vscode configuration for target device: Edge
+    # Ensure .vscode configuration for target device and trust
     $vscodeFolder = "$destPath\.vscode"
     if (-not (Test-Path $vscodeFolder)) {
         New-Item -Path $vscodeFolder -ItemType Directory -Force | Out-Null
@@ -295,7 +349,10 @@ function Invoke-ProjectPreparation([string]$destPath) {
 {
   "dart.defaultFlutterDevice": "edge",
   "dart.flutterSelectDeviceWhenConnected": false,
-  "dart.runPubGetOnPubspecChanges": "always"
+  "dart.runPubGetOnPubspecChanges": "always",
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+  "security.workspace.trust.banner": "never"
 }
 '@
     $projSettings | Out-File -FilePath $settingsFile -Encoding utf8 -Force
@@ -310,92 +367,69 @@ function Invoke-ProjectPreparation([string]$destPath) {
       "request": "launch",
       "type": "dart",
       "deviceId": "edge"
+    },
+    {
+      "name": "Flutter (Chrome / Default)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome"
     }
   ]
 }
 '@
     $projLaunch | Out-File -FilePath $launchFile -Encoding utf8 -Force
 
-    # Run flutter pub get / dart pub get
+    # Run flutter pub get / dart pub get automatically
     Write-Host ""
     Write-Host "=========================================================" -ForegroundColor Cyan
-    Write-Host "   Resolving Dependencies & Preparing Environment        " -ForegroundColor Cyan
+    Write-Host "   Resolving Dependencies (flutter pub get)              " -ForegroundColor Cyan
     Write-Host "=========================================================" -ForegroundColor Cyan
     Write-Host "Running 'flutter pub get' for $destPath..." -ForegroundColor White
     Log-Launch "Resolving dependencies via flutter pub get for $destPath"
 
-    $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
-    if ($flutterCmd) {
+    $flutterBat = "$ToolsDir\flutter\bin\flutter.bat"
+    $dartExe = "$ToolsDir\flutter\bin\cache\dart-sdk\bin\dart.exe"
+
+    if (Test-Path $flutterBat) {
         try {
             Push-Location $destPath
-            & flutter pub get
+            & $flutterBat pub get
             Pop-Location
             Write-Host "[OK] Dependencies successfully resolved via Flutter CLI." -ForegroundColor Green
-            Log-Launch "Dependencies resolved successfully"
+            Log-Launch "Dependencies resolved successfully via Flutter CLI"
         } catch {
             Write-Host "[WARN] Flutter pub get encountered an issue: $_" -ForegroundColor Yellow
             Log-Launch "Warning: flutter pub get error: $_"
             Pop-Location
         }
+    } elseif (Test-Path $dartExe) {
+        try {
+            Push-Location $destPath
+            & $dartExe pub get
+            Pop-Location
+            Write-Host "[OK] Dependencies successfully resolved via Dart CLI." -ForegroundColor Green
+            Log-Launch "Dependencies resolved via Dart CLI"
+        } catch {
+            Write-Host "[WARN] Dart pub get encountered an issue: $_" -ForegroundColor Yellow
+            Log-Launch "Warning: dart pub get error: $_"
+            Pop-Location
+        }
     } else {
-        $dartCmd = Get-Command dart -ErrorAction SilentlyContinue
-        if ($dartCmd) {
+        $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+        if ($flutterCmd) {
             try {
                 Push-Location $destPath
-                & dart pub get
+                & flutter pub get
                 Pop-Location
-                Write-Host "[OK] Dependencies successfully resolved via Dart CLI." -ForegroundColor Green
-                Log-Launch "Dependencies resolved via Dart CLI"
+                Write-Host "[OK] Dependencies successfully resolved via system Flutter CLI." -ForegroundColor Green
+                Log-Launch "Dependencies resolved via system Flutter"
             } catch {
-                Write-Host "[WARN] Dart pub get encountered an issue: $_" -ForegroundColor Yellow
-                Log-Launch "Warning: dart pub get error: $_"
+                Write-Host "[WARN] Flutter pub get encountered an issue: $_" -ForegroundColor Yellow
+                Log-Launch "Warning: flutter pub get error: $_"
                 Pop-Location
             }
-        } else {
-            Write-Host "Note: Portable Flutter CLI will initialize dependencies when VS Code opens." -ForegroundColor DarkGray
         }
     }
-}
-
-# ----------------- Main Launcher Workflow -----------------
-
-# 1. Detect & Configure Environment Paths
-$toolsPath = @(
-    "$ToolsDir\flutter\bin",
-    "$ToolsDir\flutter\bin\cache\dart-sdk\bin",
-    "$ToolsDir\git\cmd",
-    "$ToolsDir\git\bin",
-    "$ToolsDir\sqlite",
-    "$ScriptRoot\vscode\bin"
-)
-foreach ($p in $toolsPath) {
-    if ((Test-Path $p) -and ($env:Path -notlike "*$p*")) {
-        $env:Path = "$p;$env:Path"
-    }
-}
-
-# 2. Configure Edge as Default Web Device
-$edgeCandidates = @(
-    "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
-    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-    "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe"
-)
-$detectedEdge = $null
-foreach ($b in $edgeCandidates) {
-    if (Test-Path $b) {
-        $detectedEdge = $b
-        break
-    }
-}
-
-if ($detectedEdge) {
-    $env:CHROME_EXECUTABLE = $detectedEdge
-    $env:FLUTTER_WEB_BROWSER = "edge"
-    Write-Host "[OK] Target browser configured (Microsoft Edge): $detectedEdge" -ForegroundColor Green
-    Log-Launch "Target browser set to Edge: $detectedEdge"
-} else {
-    Write-Host "[WARN] Microsoft Edge not found in standard paths. Flutter will use system default browser." -ForegroundColor Yellow
-    Log-Launch "Edge not found in standard paths"
 }
 
 # 3. Check / Configure Git User Information
