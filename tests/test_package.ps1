@@ -190,6 +190,26 @@ Assert-Test "Installer - Verification Checks and PATH Configuration" {
 }
 
 # ------------------------------------------------------------------------------
+# 6. Telemetry & Logger Configuration Integrity Tests
+# ------------------------------------------------------------------------------
+Assert-Test "Telemetry - Configuration & Dispatcher Integrity" {
+    $InstallContent = Get-Content "$ScriptRoot\install.ps1" -Raw
+    $LaunchContent = Get-Content "$ScriptRoot\bin\launch.ps1" -Raw
+    
+    # Verify active telemetry endpoint in install.ps1 and launch.ps1
+    if ($InstallContent -notmatch '\$TelemetryEndpoint\s*=\s*"https://script\.google\.com/macros/s/[^"]+"') {
+        throw "install.ps1 missing valid active TelemetryEndpoint URL"
+    }
+    if ($LaunchContent -notmatch '\$TelemetryEndpoint\s*=\s*"https://script\.google\.com/macros/s/[^"]+"') {
+        throw "launch.ps1 missing valid active TelemetryEndpoint URL"
+    }
+    # Ensure no empty override exists in install.ps1
+    if ($InstallContent -match '\$TelemetryEndpoint\s*=\s*""') {
+        throw "install.ps1 contains an empty TelemetryEndpoint override"
+    }
+}
+
+# ------------------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------------------
 Write-Host "`n-------------------------------------------------" -ForegroundColor Cyan

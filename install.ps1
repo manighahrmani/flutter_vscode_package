@@ -252,43 +252,6 @@ function Extract-ZipArchive([string]$zipFile, [string]$targetDir, [string]$descr
     }
 }
 
-# ----------------- Remote Telemetry Dispatcher -----------------
-$TelemetryEndpoint = "" # Set Google Apps Script / Cloud Webhook URL to receive live telemetry
-function Send-InstallationTelemetry([string]$status, [int]$checkFailures, [hashtable]$timings) {
-    if (-not $TelemetryEndpoint -or $TelemetryEndpoint.Trim() -eq "") {
-        return
-    }
-    try {
-        $payload = @{
-            timestamp        = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-            user             = $env:USERNAME
-            computer         = $env:COMPUTERNAME
-            os               = [System.Environment]::OSVersion.VersionString
-            psVersion        = "$($PSVersionTable.PSVersion)"
-            status           = $status
-            checkFailures    = $checkFailures
-            timings          = $timings
-            log              = ($logEntries -join "`n")
-        } | ConvertTo-Json -Depth 5
-
-        # Asynchronous non-blocking HTTP POST
-        [System.Threading.Tasks.Task]::Run([Action]{
-            try {
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
-                $req = [System.Net.WebRequest]::Create($TelemetryEndpoint)
-                $req.Method = "POST"
-                $req.ContentType = "application/json"
-                $req.ContentLength = $bytes.Length
-                $req.Timeout = 4000
-                $stream = $req.GetRequestStream()
-                $stream.Write($bytes, 0, $bytes.Length)
-                $stream.Close()
-                $resp = $req.GetResponse()
-                $resp.Close()
-            } catch {}
-        }) | Out-Null
-    } catch {}
-}
 
 # ----------------- Start Installation -----------------
 Clear-Host
