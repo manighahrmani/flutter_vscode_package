@@ -28,7 +28,7 @@ $IssuesUrl    = "https://github.com/manighahrmani/flutter_vscode_package/issues"
 # Component Download URLs
 $UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/releases/latest/download/flutter_vscode_package.zip"
 $UrlVSCode         = "https://update.code.visualstudio.com/latest/win32-x64-archive/stable"
-$UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip"
+$UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.47.2-stable.zip"
 $UrlGit            = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip"
 $UrlSQLite         = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3450300.zip"
 
@@ -752,17 +752,17 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
+  cupertino_icons: '>=1.0.8'
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
+  flutter_lints: '>=4.0.0'
 
 flutter:
   uses-material-design: true
