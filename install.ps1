@@ -28,7 +28,8 @@ $IssuesUrl    = "https://github.com/manighahrmani/flutter_vscode_package/issues"
 # Component Download URLs
 $UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/releases/latest/download/flutter_vscode_package.zip"
 $UrlVSCode         = "https://update.code.visualstudio.com/latest/win32-x64-archive/stable"
-$UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.47.2-stable.zip"
+$FlutterVersion    = "3.47.2"
+$UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_$FlutterVersion-stable.zip"
 $UrlGit            = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip"
 $UrlSQLite         = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3450300.zip"
 
@@ -404,7 +405,13 @@ Log-Message "[OK] VS Code Portable ready." "Green"
 
 # 4. Setup Flutter SDK
 Log-Message "[3/6] Setting up Flutter SDK..." "Green"
-if (-not (Test-Path "$ToolsFolder\flutter\bin\flutter.bat")) {
+$flutterVersionFile = "$ToolsFolder\flutter\version"
+$installedFlutterVersion = if (Test-Path $flutterVersionFile) { (Get-Content $flutterVersionFile -Raw).Trim() } else { $null }
+if ((-not (Test-Path "$ToolsFolder\flutter\bin\flutter.bat")) -or ($installedFlutterVersion -ne $FlutterVersion)) {
+    if (Test-Path "$ToolsFolder\flutter") {
+        Log-Message "Existing Flutter SDK ($installedFlutterVersion) is outdated; upgrading to $FlutterVersion..." "Yellow"
+        Remove-Item "$ToolsFolder\flutter" -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $flutterZip = "$env:TEMP\flutter_sdk.zip"
     if (Download-FileWithRetry $UrlFlutter $flutterZip "Flutter SDK (Windows x64)") {
         Extract-ZipArchive $flutterZip $ToolsFolder "Flutter SDK (Windows x64)" | Out-Null
