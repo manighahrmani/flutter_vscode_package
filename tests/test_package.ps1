@@ -157,6 +157,29 @@ Assert-Test "Starter Project Scaffold Generator Verification" {
     }
 }
 
+Assert-Test "Launcher - Mandatory GitHub Author Configuration" {
+    $LaunchContent = Get-Content "$ScriptRoot\bin\launch.ps1" -Raw
+
+    if ($LaunchContent -notmatch 'GitHub Author Configuration \(Required Check\)') {
+        throw "launch.ps1 does not identify Git author configuration as a required check"
+    }
+    if ($LaunchContent -notmatch 'Enter your GitHub username') {
+        throw "launch.ps1 does not prompt for a GitHub username"
+    }
+    if ($LaunchContent -notmatch 'email associated with your GitHub account') {
+        throw "launch.ps1 does not request the email associated with GitHub"
+    }
+    if ($LaunchContent -notmatch 'Would you like to change these values\?') {
+        throw "launch.ps1 does not let users update existing Git author values"
+    }
+    if ($LaunchContent -notmatch 'while \(-not \$userName\)' -or $LaunchContent -notmatch 'while \(-not \$userEmail\)') {
+        throw "launch.ps1 does not require both Git author values"
+    }
+    if ($LaunchContent -notmatch 'git config --global user\.name' -or $LaunchContent -notmatch 'git config --global user\.email') {
+        throw "launch.ps1 does not save both Git author values globally"
+    }
+}
+
 # ------------------------------------------------------------------------------
 # 5. Installer Verification Checks & PATH Logic Tests
 # ------------------------------------------------------------------------------

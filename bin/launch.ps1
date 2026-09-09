@@ -452,26 +452,45 @@ function Invoke-ProjectPreparation([string]$destPath) {
 # 3. Check / Configure Git User Information
 $gitAvailable = Get-Command git -ErrorAction SilentlyContinue
 if ($gitAvailable) {
-    $userName = & git config --get user.name 2>$null
-    $userEmail = & git config --get user.email 2>$null
+    $userName = (& git config --global --get user.name 2>$null | Out-String).Trim()
+    $userEmail = (& git config --global --get user.email 2>$null | Out-String).Trim()
 
-    if (-not $userName -or -not $userEmail) {
-        Write-Host ""
-        Write-Host "--- Git Author Configuration (One-Time Setup) ---" -ForegroundColor Yellow
-        Write-Host "Please enter your name and email for your Git commits." -ForegroundColor White
-        Write-Host ""
+    Write-Host ""
+    Write-Host "--- GitHub Author Configuration (Required Check) ---" -ForegroundColor Yellow
 
-        if (-not $userName) {
-            $inputName = Read-Host "Enter your Full Name (e.g. Jane Doe)"
-            if ($inputName) { & git config --global user.name "$inputName" }
+    if ($userName -and $userEmail) {
+        Write-Host "Current GitHub username: $userName" -ForegroundColor White
+        Write-Host "Current GitHub email:    $userEmail" -ForegroundColor White
+        $changeGitAuthor = Read-Host "Would you like to change these values? (y/N)"
+        if ($changeGitAuthor -eq "y" -or $changeGitAuthor -eq "Y") {
+            $userName = ""
+            $userEmail = ""
         }
-        if (-not $userEmail) {
-            $inputEmail = Read-Host "Enter your Email (e.g. student@example.ac.uk)"
-            if ($inputEmail) { & git config --global user.email "$inputEmail" }
-        }
-        Write-Host "[OK] Git author configuration updated." -ForegroundColor Green
-        Log-Launch "Configured git author name: $inputName, email: $inputEmail"
+    } else {
+        Write-Host "Your Git author configuration is incomplete." -ForegroundColor Yellow
+        Write-Host "A GitHub username and the email associated with your GitHub account are required." -ForegroundColor White
     }
+
+    while (-not $userName) {
+        $userName = (Read-Host "Enter your GitHub username (e.g. octocat)").Trim()
+    }
+    while (-not $userEmail) {
+        $userEmail = (Read-Host "Enter the email associated with your GitHub account").Trim()
+    }
+
+    & git config --global user.name "$userName"
+    & git config --global user.email "$userEmail"
+
+    $confirmedName = (& git config --global --get user.name 2>$null | Out-String).Trim()
+    $confirmedEmail = (& git config --global --get user.email 2>$null | Out-String).Trim()
+    if (-not $confirmedName -or -not $confirmedEmail) {
+        throw "Git author configuration could not be saved."
+    }
+
+    Write-Host "[OK] Git author configuration confirmed." -ForegroundColor Green
+    Write-Host "  GitHub username: $confirmedName" -ForegroundColor Green
+    Write-Host "  GitHub email:    $confirmedEmail" -ForegroundColor Green
+    Log-Launch "Confirmed Git author configuration"
 }
 
 # 4. Workspace & Repository Handling
