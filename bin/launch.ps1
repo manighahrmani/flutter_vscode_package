@@ -458,6 +458,11 @@ if ($gitAvailable) {
     Write-Host ""
     Write-Host "--- GitHub Author Configuration (Required Check) ---" -ForegroundColor Yellow
 
+    # Only write to the global config when values are missing or the user asks
+    # to change them. Writing unchanged values re-locks .gitconfig for no reason
+    # and fails on network drives that leave a stale .gitconfig.lock behind.
+    $needsWrite = $false
+
     if ($userName -and $userEmail) {
         Write-Host "Current GitHub username: $userName" -ForegroundColor White
         Write-Host "Current GitHub email:    $userEmail" -ForegroundColor White
@@ -465,10 +470,12 @@ if ($gitAvailable) {
         if ($changeGitAuthor -eq "y" -or $changeGitAuthor -eq "Y") {
             $userName = ""
             $userEmail = ""
+            $needsWrite = $true
         }
     } else {
         Write-Host "Your Git author configuration is incomplete." -ForegroundColor Yellow
         Write-Host "A GitHub username and the email associated with your GitHub account are required." -ForegroundColor White
+        $needsWrite = $true
     }
 
     while (-not $userName) {
@@ -478,8 +485,35 @@ if ($gitAvailable) {
         $userEmail = (Read-Host "Enter the email associated with your GitHub account").Trim()
     }
 
-    & git config --global user.name "$userName"
-    & git config --global user.email "$userEmail"
+    if ($needsWrite) {
+        # git writes the global config by creating a ".lock" beside it and
+        # renaming it into place. On network/roaming home drives (e.g. an N:
+        # drive) a crashed or interrupted run can leave a stale ".lock" behind,
+        # after which every write fails with
+        #   error: could not lock config file <path>: File exists
+        # Find the actual global config path git is using and clear a stale lock
+        # before writing, so the write (including when the user chose to change
+        # the values) succeeds instead of erroring out.
+        $globalConfigPaths = @()
+        try {
+            $globalConfigPaths += (& git config --global --list --show-origin 2>$null |
+                ForEach-Object { if ($_ -match '^file:([^\t]+)\t') { $matches[1] } } |
+                Sort-Object -Unique)
+        } catch {}
+        if (-not $globalConfigPaths) {
+            $home = if ($env:HOME) { $env:HOME } else { $env:USERPROFILE }
+            $globalConfigPaths = @((Join-Path $home ".gitconfig"))
+        }
+        foreach ($cfg in $globalConfigPaths) {
+            $lock = "$cfg.lock"
+            if (Test-Path -LiteralPath $lock) {
+                try { Remove-Item -LiteralPath $lock -Force -ErrorAction Stop } catch {}
+            }
+        }
+
+        & git config --global user.name "$userName" 2>$null
+        & git config --global user.email "$userEmail" 2>$null
+    }
 
     $confirmedName = (& git config --global --get user.name 2>$null | Out-String).Trim()
     $confirmedEmail = (& git config --global --get user.email 2>$null | Out-String).Trim()
