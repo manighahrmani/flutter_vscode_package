@@ -25,8 +25,14 @@ $LogPath      = "$env:USERPROFILE\Downloads\flutter_vscode_install.log"
 $SupportEmail = "mani.ghahremani@port.ac.uk"
 $IssuesUrl    = "https://github.com/manighahrmani/flutter_vscode_package/issues"
 
+# ===================== BETA CHANNEL =====================
+# This installer pulls the package template from a specific BETA prerelease
+# tag rather than releases/latest (which never serves prereleases). Update
+# $BetaTag when you cut a new beta.
+$BetaTag = "v1.3.0-beta.1"
+
 # Component Download URLs
-$UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/releases/latest/download/flutter_vscode_package.zip"
+$UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/releases/download/$BetaTag/flutter_vscode_package.zip"
 $UrlVSCode         = "https://update.code.visualstudio.com/latest/win32-x64-archive/stable"
 $FlutterVersion    = "3.47.5"
 $UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_$FlutterVersion-stable.zip"
@@ -258,6 +264,7 @@ function Extract-ZipArchive([string]$zipFile, [string]$targetDir, [string]$descr
 Clear-Host
 Log-Message "=========================================================" "Cyan"
 Log-Message "     Portable Flutter & VS Code Environment Setup        " "Cyan"
+Log-Message "     *** BETA CHANNEL ($BetaTag) ***                     " "Magenta"
 Log-Message "=========================================================" "Cyan"
 Log-Message "Target Directory: $DestFolder" "DarkGray"
 Log-Message "Log File:         $LogPath" "DarkGray"
