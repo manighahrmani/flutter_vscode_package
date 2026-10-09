@@ -54,6 +54,25 @@ $AndroidPlatform    = "platforms;android-34"
 $AndroidSystemImage = "system-images;android-34;google_apis;x86_64"
 $AndroidAvdName     = "flutter_emulator"
 
+# Portable JDK (Eclipse Temurin / Adoptium) 17 LTS. sdkmanager.bat and
+# avdmanager.bat are Java launchers: with no JDK on the machine (JAVA_HOME
+# unset, no `java` on PATH) every call fails with "JAVA_HOME is not set and no
+# java command could be found". The portable bundle ships no Java, so we
+# download and extract a no-admin JDK into $ToolsFolder\jdk and wire JAVA_HOME
+# + PATH BEFORE any sdkmanager/avdmanager call. JDK (not JRE); .zip (not .msi).
+$JdkFolder = "$ToolsFolder\jdk"
+# PRIMARY: concrete, pinned, known-good 17.x asset. This is primary because the
+# .NET WebClient fallback in Download-FileWithRetry does NOT follow redirects,
+# and the Adoptium API URL below is a redirect.
+$UrlJdkPrimary  = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9+9.1/OpenJDK17U-jdk_x64_windows_hotspot_17.0.9_9.zip"
+# FALLBACK: Adoptium API "latest 17 GA" redirect. curl.exe -L (tier 1 of
+# Download-FileWithRetry) follows it, so this still resolves if the pinned
+# asset is ever removed.
+$UrlJdkFallback = "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse?project=jdk"
+# Resolved below to the folder that DIRECTLY contains bin\java.exe. Gates the
+# Android steps: if it stays $null the Android SDK/AVD setup is skipped.
+$JavaHome = $null
+
 # Component Download URLs (same set as install.ps1, kept self-contained)
 $UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/releases/latest/download/flutter_vscode_package.zip"
 $UrlVSCode         = "https://update.code.visualstudio.com/latest/win32-x64-archive/stable"
@@ -350,6 +369,7 @@ $dirs = @(
     "$ToolsFolder\git",
     "$ToolsFolder\sqlite",
     "$ToolsFolder\pub_cache",
+    $JdkFolder,
     $AndroidFolder,
     "$AndroidFolder\cmdline-tools",
     $VSCodeFolder,
@@ -365,7 +385,7 @@ foreach ($d in $dirs) {
 }
 
 # 2. Download / Extract Base Package Template
-Log-Message "[1/8] Setting up base launcher scripts and configuration..." "Green"
+Log-Message "[1/9] Setting up base launcher scripts and configuration..." "Green"
 $pkgZip = "$env:TEMP\flutter_vscode_pkg.zip"
 if (Download-FileWithRetry $UrlPackageRelease $pkgZip "Package Template") {
     Extract-ZipArchive $pkgZip $DestFolder "Base Launcher & Config Template" | Out-Null
@@ -451,7 +471,7 @@ $settingsContent | Out-File -FilePath $settingsFile -Encoding utf8 -Force
 Log-Message "[OK] Default VS Code Flutter settings configured." "Green"
 
 # 3. Setup VS Code Portable
-Log-Message "[2/8] Setting up VS Code Portable..." "Green"
+Log-Message "[2/9] Setting up VS Code Portable..." "Green"
 if (-not (Test-Path "$VSCodeFolder\Code.exe")) {
     $vscodeZip = "$env:TEMP\vscode_win64.zip"
     if (Download-FileWithRetry $UrlVSCode $vscodeZip "VS Code Portable x64") {
@@ -465,7 +485,7 @@ if (-not (Test-Path "$VSCodeFolder\Code.exe")) {
 Log-Message "[OK] VS Code Portable ready." "Green"
 
 # 4. Setup Flutter SDK
-Log-Message "[3/8] Setting up Flutter SDK..." "Green"
+Log-Message "[3/9] Setting up Flutter SDK..." "Green"
 $flutterVersionFile = "$ToolsFolder\flutter\version"
 $installedFlutterVersion = if (Test-Path $flutterVersionFile) { (Get-Content $flutterVersionFile -Raw).Trim() } else { $null }
 if ((-not (Test-Path "$ToolsFolder\flutter\bin\flutter.bat")) -or ($installedFlutterVersion -ne $FlutterVersion)) {
@@ -485,7 +505,7 @@ if (-not (Test-Path "$ToolsFolder\flutter\bin\flutter.bat")) {
 Log-Message "[OK] Flutter SDK installed." "Green"
 
 # 5. Setup Git & SQLite CLIs
-Log-Message "[4/8] Setting up Git and SQLite command-line tools..." "Green"
+Log-Message "[4/9] Setting up Git and SQLite command-line tools..." "Green"
 if (-not (Test-Path "$ToolsFolder\git\cmd\git.exe")) {
     $gitZip = "$env:TEMP\mingit.zip"
     if (Download-FileWithRetry $UrlGit $gitZip "MinGit") {
@@ -514,7 +534,7 @@ if (-not (Test-Path "$ToolsFolder\sqlite\sqlite3.wasm")) {
 Log-Message "[OK] Git and SQLite CLI tools ready." "Green"
 
 # 6. Install VS Code Extensions
-Log-Message "[5/8] Installing VS Code Extensions..." "Green"
+Log-Message "[5/9] Installing VS Code Extensions..." "Green"
 $codeCmd = "$VSCodeFolder\bin\code.cmd"
 $extDir  = "$VSCodeFolder\data\extensions"
 $userDataDir = "$VSCodeFolder\data\user-data"
@@ -555,8 +575,91 @@ if (Test-Path $productJsonPath) {
     }
 }
 
+# ===================== 6.9 PORTABLE JDK (BETA) =====================
+# sdkmanager/avdmanager need Java. Download & extract a no-admin Temurin JDK 17
+# into $JdkFolder, resolve $JavaHome, wire JAVA_HOME + PATH (Process & User),
+# and verify. The Android steps below are gated on $JavaHome being set.
+Log-Message "[6/9] Setting up portable JDK (BETA)..." "Green"
+
+# Reuse an already-extracted JDK if present (skip the multi-hundred-MB download).
+$existingJava = Get-ChildItem -Path $JdkFolder -Filter "java.exe" -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.Directory.Name -eq "bin" } | Select-Object -First 1
+if ($existingJava) {
+    $JavaHome = Split-Path -Parent $existingJava.Directory.FullName
+    Log-Message "[OK] Reusing existing JDK at $JavaHome." "DarkGray" $false
+} else {
+    $jdkZip = "$env:TEMP\temurin_jdk17.zip"
+    if (Test-Path $jdkZip) { Remove-Item $jdkZip -Force -ErrorAction SilentlyContinue }
+
+    # PRIMARY concrete asset first; FALLBACK to the Adoptium API redirect.
+    $jdkDownloaded = Download-FileWithRetry $UrlJdkPrimary $jdkZip "Eclipse Temurin JDK 17 (Windows x64)"
+    if (-not $jdkDownloaded) {
+        Log-Message "Primary JDK download failed; trying Adoptium API fallback..." "DarkYellow"
+        $jdkDownloaded = Download-FileWithRetry $UrlJdkFallback $jdkZip "Eclipse Temurin JDK 17 (Adoptium API fallback)"
+    }
+
+    if ($jdkDownloaded) {
+        if (Extract-ZipArchive $jdkZip $JdkFolder "Eclipse Temurin JDK 17") {
+            # The zip extracts a versioned subfolder (e.g. jdk-17.0.9+9) that
+            # directly contains bin\java.exe. Find it robustly.
+            $foundJava = Get-ChildItem -Path $JdkFolder -Filter "java.exe" -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.Directory.Name -eq "bin" } | Select-Object -First 1
+            if ($foundJava) {
+                $JavaHome = Split-Path -Parent $foundJava.Directory.FullName
+                Log-Message "[OK] JDK extracted; JAVA_HOME resolved to $JavaHome." "DarkGray" $false
+            } else {
+                Log-Message "[FAIL] Could not locate bin\java.exe after extracting the JDK." "Red"
+            }
+        }
+        Remove-Item $jdkZip -Force -ErrorAction SilentlyContinue
+    } else {
+        Log-Message "[FAIL] Could not download the Temurin JDK (primary and fallback both failed)." "Red"
+    }
+}
+
+# Wire JAVA_HOME + PATH for Process and User, then verify java runs.
+if ($JavaHome -and (Test-Path "$JavaHome\bin\java.exe")) {
+    $jdkBin = "$JavaHome\bin"
+
+    # Process-level JAVA_HOME + PATH (child sdkmanager/avdmanager inherit these).
+    [System.Environment]::SetEnvironmentVariable("JAVA_HOME", $JavaHome, "Process")
+    $procPath = [System.Environment]::GetEnvironmentVariable("PATH", "Process")
+    if ($procPath -notlike "*$jdkBin*") { $procPath = "$jdkBin;$procPath" }
+    [System.Environment]::SetEnvironmentVariable("PATH", $procPath, "Process")
+
+    # User-level JAVA_HOME + PATH (permanent, non-admin), same pattern as Android.
+    try {
+        $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+        if ($null -eq $userPath) { $userPath = "" }
+        if ($userPath -notlike "*$jdkBin*") { $userPath = "$jdkBin;$userPath" }
+        [System.Environment]::SetEnvironmentVariable("PATH", $userPath, "User")
+        [System.Environment]::SetEnvironmentVariable("JAVA_HOME", $JavaHome, "User")
+        Log-Message "[OK] JAVA_HOME and PATH saved to User profile." "Green"
+    } catch {
+        Log-Message "Notice: Could not write User Registry JAVA_HOME/PATH. Process env is active." "DarkYellow"
+    }
+
+    # Verify java actually runs.
+    try {
+        $javaVer = & "$JavaHome\bin\java.exe" -version 2>&1 | Select-Object -First 1
+        if ($LASTEXITCODE -eq 0) {
+            Log-Message "[PASS] Java detected: $javaVer" "Green"
+        } else {
+            Log-Message "[FAIL] Java present but '-version' exited $LASTEXITCODE; Android steps will be SKIPPED." "Red"
+            $JavaHome = $null
+        }
+    } catch {
+        Log-Message "[FAIL] Java could not be run: $_; Android steps will be SKIPPED." "Red"
+        $JavaHome = $null
+    }
+} else {
+    Log-Message "[FAIL] JDK is REQUIRED for the Android tools but was not installed; SKIPPING the Android SDK/AVD steps." "Red"
+    $JavaHome = $null
+}
+
 # ===================== 7. ANDROID SDK (EXPERIMENTAL / BETA) =====================
-Log-Message "[6/8] Setting up Android command-line SDK (BETA)..." "Green"
+if ($JavaHome) {
+Log-Message "[7/9] Setting up Android command-line SDK (BETA)..." "Green"
 
 # 7a. Download & lay out commandline-tools as cmdline-tools\latest\
 # The zip extracts to a top-level `cmdline-tools` folder. sdkmanager REQUIRES
@@ -659,9 +762,12 @@ if (Test-Path $flutterBat) {
     Invoke-AndroidTool $flutterBat @("config", "--android-sdk", $AndroidFolder) $null "flutter config --android-sdk" | Out-Null
 }
 Log-Message "[OK] Android SDK setup step finished (see verification below)." "Green"
+} else {
+    Log-Message "[FAIL] Skipping Android SDK/AVD setup: no working JDK (see above)." "Red"
+}
 
 # 8. Base PATH (flutter/dart/git/sqlite/vscode) so the base env also works.
-Log-Message "[7/8] Configuring base environment & PATH..." "Green"
+Log-Message "[8/9] Configuring base environment & PATH..." "Green"
 $pathsToAdd = @(
     "$ToolsFolder\flutter\bin",
     "$ToolsFolder\flutter\bin\cache\dart-sdk\bin",
@@ -770,6 +876,15 @@ if (Test-Path "$VSCodeFolder\Code.exe") {
 # ----------------- Android-specific Verification (BETA) -----------------
 Log-Message "--- Android (BETA) checks ---" "Cyan"
 
+# Check A0: Java (JDK) present and runnable (sdkmanager/avdmanager need it)
+if ($JavaHome -and (Test-Path "$JavaHome\bin\java.exe")) {
+    $verJava = & "$JavaHome\bin\java.exe" -version 2>&1 | Select-Object -First 1
+    Log-Message "[PASS] Java (JDK) detected: $verJava" "Green"
+} else {
+    Log-Message "[FAIL] Java (JDK) missing - Android tools cannot run." "Red"
+    $CheckFailures++
+}
+
 # Check A1: sdkmanager present
 if (Test-Path $sdkManagerBat) {
     Log-Message "[PASS] Android sdkmanager present ($sdkManagerBat)." "Green"
@@ -844,11 +959,21 @@ Write-Host "    On such hardware the emulator will NOT launch even though this" 
 Write-Host "    installer reported success." -ForegroundColor White
 Write-Host "  * The Android SDK + system image download is MULTIPLE GIGABYTES." -ForegroundColor White
 Write-Host "  * This is an EXPERIMENTAL / BETA path and is UNTESTED on lab hardware." -ForegroundColor White
+Write-Host "  * A portable JDK is now downloaded and configured AUTOMATICALLY by this" -ForegroundColor White
+Write-Host "    script (no manual Java install needed)." -ForegroundColor White
 Write-Host "  * Your existing install.ps1 environment is NOT affected by this script." -ForegroundColor White
 Write-Host "" -ForegroundColor White
 Write-Host "  >> PLEASE REPORT BACK whether the emulator actually LAUNCHES on your" -ForegroundColor Magenta
 Write-Host "     machine (yes/no + any error), so we know if this path is viable." -ForegroundColor Magenta
 Write-Host "==========================================================================" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "RUNNING A FLUTTER PROJECT ON THE EMULATOR:" -ForegroundColor Cyan
+Write-Host "  A Flutter project must have Android enabled to run on the emulator." -ForegroundColor White
+Write-Host "  If your project has no 'android/' folder, enable it first by running" -ForegroundColor White
+Write-Host "  this INSIDE the project folder:" -ForegroundColor White
+Write-Host "       flutter create --platforms=android ." -ForegroundColor Green
+Write-Host "  Then launch the emulator and run on it:" -ForegroundColor White
+Write-Host "       flutter run -d emulator-5554" -ForegroundColor Green
 Write-Host ""
 
 Save-Log
