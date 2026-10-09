@@ -1455,3 +1455,27 @@ Write-Host ""
 
 Save-Log
 Send-InstallationTelemetry $(if ($CheckFailures -eq 0) { "SUCCESS" } else { "FAILED" }) $CheckFailures @{}
+
+# Ensure batch launcher exists
+if (-not (Test-Path $launcherBat)) {
+    $batContent = @"
+@echo off
+setlocal
+cd /d "%~dp0"
+title Flutter VS Code Portable
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "bin\launch.ps1"
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo Launch error occurred. Press any key to exit...
+    pause >nul
+)
+"@
+    [System.IO.File]::WriteAllText($launcherBat, $batContent, [System.Text.Encoding]::ASCII)
+}
+
+# Hand off to the same launcher used by the desktop shortcut (bin/launch.ps1).
+# It asks whether to open an existing/cloned project, clone a repository, or
+# generate the starter app, then launches VS Code accordingly. Delegating here
+# (instead of duplicating that logic) guarantees the same prompt appears
+# whether the user re-runs this install script or double-clicks the shortcut.
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$launcherBat`"" -WorkingDirectory $DestFolder
