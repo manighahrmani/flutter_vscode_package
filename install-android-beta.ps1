@@ -54,6 +54,12 @@ $AndroidPlatform    = "platforms;android-34"
 $AndroidSystemImage = "system-images;android-34;google_apis;x86_64"
 $AndroidAvdName     = "flutter_emulator"
 
+# Deterministic tool paths. Defined up front (not only inside the install block)
+# so the verification section can Test-Path them even when the Android steps are
+# skipped because the JDK was unavailable.
+$sdkManagerBat = "$AndroidFolder\cmdline-tools\latest\bin\sdkmanager.bat"
+$avdManagerBat = "$AndroidFolder\cmdline-tools\latest\bin\avdmanager.bat"
+
 # Portable JDK (Eclipse Temurin / Adoptium) 17 LTS. sdkmanager.bat and
 # avdmanager.bat are Java launchers: with no JDK on the machine (JAVA_HOME
 # unset, no `java` on PATH) every call fails with "JAVA_HOME is not set and no
@@ -639,13 +645,27 @@ if ($JavaHome -and (Test-Path "$JavaHome\bin\java.exe")) {
         Log-Message "Notice: Could not write User Registry JAVA_HOME/PATH. Process env is active." "DarkYellow"
     }
 
-    # Verify java actually runs.
+    # Verify java actually runs. `java -version` prints to STDERR and returns 0
+    # on success. Capture stderr to a file (so the native exit code is not lost
+    # through a 2>&1 pipeline) and treat "prints a version line" as success,
+    # since some portable JDK launchers report a non-zero code even when they
+    # run fine.
     try {
-        $javaVer = & "$JavaHome\bin\java.exe" -version 2>&1 | Select-Object -First 1
-        if ($LASTEXITCODE -eq 0) {
-            Log-Message "[PASS] Java detected: $javaVer" "Green"
+        $javaErrFile = "$env:TEMP\java_version_check.txt"
+        $javaProc = Start-Process -FilePath "$JavaHome\bin\java.exe" -ArgumentList "-version" `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardError $javaErrFile -RedirectStandardOutput "$env:TEMP\java_version_out.txt"
+        $javaOut = ""
+        if (Test-Path $javaErrFile) { $javaOut = (Get-Content $javaErrFile -Raw) }
+        if ([string]::IsNullOrWhiteSpace($javaOut) -and (Test-Path "$env:TEMP\java_version_out.txt")) {
+            $javaOut = (Get-Content "$env:TEMP\java_version_out.txt" -Raw)
+        }
+        Remove-Item $javaErrFile, "$env:TEMP\java_version_out.txt" -Force -ErrorAction SilentlyContinue
+        $javaFirstLine = ($javaOut -split "`n" | Select-Object -First 1).Trim()
+        if (($javaProc.ExitCode -eq 0) -or ($javaOut -match '(?i)version')) {
+            Log-Message "[PASS] Java detected: $javaFirstLine" "Green"
         } else {
-            Log-Message "[FAIL] Java present but '-version' exited $LASTEXITCODE; Android steps will be SKIPPED." "Red"
+            Log-Message "[FAIL] Java present but did not run (exit $($javaProc.ExitCode)); Android steps will be SKIPPED." "Red"
             $JavaHome = $null
         }
     } catch {
