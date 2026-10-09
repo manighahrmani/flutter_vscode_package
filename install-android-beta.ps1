@@ -775,11 +775,71 @@ if (Test-Path $avdManagerBat) {
     Log-Message "[FAIL] avdmanager not present; skipping AVD creation." "Red"
 }
 
-# 7e. Point Flutter at the Android SDK if flutter is available.
+# 7e. [Registering the Android SDK with Flutter]
+# Flutter can report "Unable to locate Android SDK" / "No valid Android SDK
+# platforms found" even when ANDROID_HOME/ANDROID_SDK_ROOT are set and
+# android-34 is installed, because Flutter validates the SDK via its OWN config
+# + its OWN license-accepted state, not the env vars alone. So we (1) persist the
+# SDK path in Flutter's config, (2) accept the Android licenses THROUGH flutter
+# non-interactively, and (3) re-run flutter doctor and record whether the Android
+# toolchain line is now a check or still an X. Each call is wrapped so a failure
+# logs and the script continues (never aborts).
 $flutterBat = "$ToolsFolder\flutter\bin\flutter.bat"
 if (Test-Path $flutterBat) {
-    Log-Message "Pointing Flutter at the Android SDK..." "DarkGray"
-    Invoke-AndroidTool $flutterBat @("config", "--android-sdk", $AndroidFolder) $null "flutter config --android-sdk" | Out-Null
+    Log-Message "[Registering the Android SDK with Flutter]" "Cyan"
+
+    # (1) Persist the SDK path in Flutter's own settings (not just env vars).
+    try {
+        Log-Message "    flutter config --android-sdk `"$AndroidFolder`" ..." "DarkGray"
+        & $flutterBat config --android-sdk "$AndroidFolder" 2>&1 |
+            ForEach-Object { Log-Message "    $_" "DarkGray" $false }
+        Log-Message "[OK] flutter config --android-sdk set to $AndroidFolder" "DarkGray" $false
+    } catch {
+        Log-Message "[FAIL] flutter config --android-sdk failed: $_" "Red"
+    }
+
+    # (2) Accept Android licenses THROUGH flutter, non-interactively. flutter
+    # doctor --android-licenses prompts repeatedly ("Accept? (y/N)"); pipe many
+    # y+CRLF lines so every prompt is answered.
+    try {
+        Log-Message "    Accepting Android licenses via flutter doctor --android-licenses ..." "DarkGray"
+        $flutterYes = ("y`r`n" * 50)
+        $flutterYes | & $flutterBat doctor --android-licenses 2>&1 |
+            ForEach-Object { Log-Message "    $_" "DarkGray" $false }
+        Log-Message "[OK] flutter doctor --android-licenses completed (exit $LASTEXITCODE)." "DarkGray" $false
+    } catch {
+        Log-Message "[FAIL] flutter doctor --android-licenses failed: $_" "Red"
+    }
+
+    # (3) Re-run flutter doctor and capture the Android-toolchain status line.
+    # Flutter marks a passing component with a check glyph and a failing one with
+    # an X glyph; relying on the exact Unicode glyph is fragile because lab
+    # console code pages mangle it, so classify by the known failure phrases
+    # instead. Record the result into $flutterAndroidToolchain and the diag log.
+    try {
+        Log-Message "    Re-running flutter doctor to re-check the Android toolchain ..." "DarkGray"
+        $docText = (& $flutterBat doctor 2>&1 | Out-String)
+        $androidLine = ""
+        foreach ($dl in ($docText -split "`r?`n")) {
+            if ($dl -match 'Android toolchain') { $androidLine = $dl.Trim(); break }
+        }
+        if ([string]::IsNullOrWhiteSpace($androidLine)) {
+            $androidLine = "(no 'Android toolchain' line found in flutter doctor output)"
+        }
+        Log-Message "    flutter doctor Android toolchain line: $androidLine" "DarkGray" $false
+        # Classify: treat the known 'invalid' phrases as not-detected; else valid.
+        if ($docText -match 'Unable to locate Android SDK' -or
+            $docText -match 'No valid Android SDK platforms found' -or
+            $androidLine -match '(?i)\[X\]|cmdline-tools component is missing|Android license status unknown') {
+            $flutterAndroidToolchain = "invalid"
+            Log-Message "[WARN] Flutter still reports the Android toolchain as NOT detected." "Yellow"
+        } else {
+            $flutterAndroidToolchain = "valid"
+            Log-Message "[OK] Flutter now reports the Android toolchain as VALID." "Green"
+        }
+    } catch {
+        Log-Message "[FAIL] flutter doctor re-check failed: $_" "Red"
+    }
 }
 Log-Message "[OK] Android SDK setup step finished (see verification below)." "Green"
 } else {
@@ -1001,6 +1061,14 @@ Write-Diag ""
 # Holds the one-line acceleration verdict derived from -accel-check (used in the
 # final SUMMARY). Stays 'unknown' unless the self-check tells us otherwise.
 $accelVerdict = "unknown"
+
+# Holds the Flutter Android-toolchain verdict set by the "[Registering the Android
+# SDK with Flutter]" step (step 7e). "valid" once flutter doctor shows a check on
+# the Android toolchain line; "invalid" if it still shows an X / a known failure
+# phrase; "unknown" if the registration step never ran (e.g. no JDK). Initialised
+# here so the DIAGNOSTICS SUMMARY always has a value to report even when the
+# Android block was skipped.
+$flutterAndroidToolchain = "unknown"
 
 # --- [1] systeminfo virtualization lines + OS caption/version/build ---
 Write-Diag "----- [1] systeminfo (virtualization) + OS -----" "Cyan"
@@ -1299,6 +1367,15 @@ if ($accelVerdict -eq "available") {
     $verdictLine = "Acceleration status UNKNOWN - see the -accel-check output above."
 }
 Write-Diag "    Verdict: $verdictLine" $(if ($accelVerdict -eq "available") { "Green" } else { "Yellow" })
+# Flutter-toolchain verdict set by the "[Registering the Android SDK with Flutter]" step.
+if ($flutterAndroidToolchain -eq "valid") {
+    $flutterToolchainLine = "Flutter Android toolchain: VALID"
+} elseif ($flutterAndroidToolchain -eq "invalid") {
+    $flutterToolchainLine = "Flutter Android toolchain: still not detected (see flutter doctor above)"
+} else {
+    $flutterToolchainLine = "Flutter Android toolchain: UNKNOWN (registration step did not run)"
+}
+Write-Diag "    $flutterToolchainLine" $(if ($flutterAndroidToolchain -eq "valid") { "Green" } else { "Yellow" })
 Write-Diag "    Diagnostics log: $DiagLog" "Cyan"
 Write-Diag "    Launch log:      $LaunchLog" "Cyan"
 Write-Diag "    Please send BOTH log files back so we can diagnose your machine." "Cyan"
@@ -1314,22 +1391,44 @@ Log-Message "  Installed at: $DestFolder                              " "Green"
 Log-Message "=========================================================" "Green"
 Log-Message ""
 Write-Host ""
-Write-Host "HOW TO LAUNCH THE EMULATOR:" -ForegroundColor Cyan
-Write-Host "  1. Open a NEW terminal (so the updated PATH is loaded), then run:" -ForegroundColor White
+Write-Host "HOW TO LAUNCH THE EMULATOR AND RUN YOUR APP (do these IN ORDER):" -ForegroundColor Cyan
+Write-Host "  a. Open a NEW terminal so the updated PATH is loaded (close any old one)." -ForegroundColor White
+Write-Host "  b. Start the emulator and WAIT for it to fully boot to the Android HOME" -ForegroundColor White
+Write-Host "     screen. The FIRST cold boot can take several MINUTES and may show a" -ForegroundColor White
+Write-Host "     BLACK screen for a while - this is NORMAL, it is still booting, not" -ForegroundColor White
+Write-Host "     broken. Wait until the Android launcher / home screen actually appears." -ForegroundColor White
 Write-Host "       flutter emulators --launch $AndroidAvdName" -ForegroundColor Green
-Write-Host "  2. Wait for the emulator window to appear, then in your project run:" -ForegroundColor White
-Write-Host "       flutter run" -ForegroundColor Green
+Write-Host "     (fallback if that command is not found:)" -ForegroundColor DarkGray
+Write-Host "       emulator -avd $AndroidAvdName" -ForegroundColor Green
+Write-Host "  c. Confirm the device is seen. This should now list an Android device" -ForegroundColor White
+Write-Host "     such as 'sdk gphone64 x86 64 (mobile)' / an emulator-5554 entry, NOT" -ForegroundColor White
+Write-Host "     only Windows + Edge:" -ForegroundColor White
+Write-Host "       flutter devices" -ForegroundColor Green
+Write-Host "     If it is not listed yet, check adb and wait until emulator-5554 shows" -ForegroundColor White
+Write-Host "     as 'device':" -ForegroundColor White
+Write-Host "       adb devices" -ForegroundColor Green
+Write-Host "  d. In your project folder, run the app on the emulator:" -ForegroundColor White
+Write-Host "       flutter run -d emulator-5554" -ForegroundColor Green
+Write-Host "  e. VS CODE ROUTE (instead of the terminal in step d): open the project in" -ForegroundColor White
+Write-Host "     VS Code, then use the device selector in the bottom-right status bar" -ForegroundColor White
+Write-Host "     (or Command Palette: 'Flutter: Select Device') to pick the Android" -ForegroundColor White
+Write-Host "     emulator. It only appears once the emulator is BOOTED and flutter" -ForegroundColor White
+Write-Host "     doctor sees the SDK. Then press F5 / Run." -ForegroundColor White
+Write-Host "  REMEMBER THE ORDER: boot the emulator and wait for the HOME screen BEFORE" -ForegroundColor Yellow
+Write-Host "  running the app. A black screen means it is still booting, not broken." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "==========================================================================" -ForegroundColor Yellow
 Write-Host "  IMPORTANT BETA / EXPERIMENTAL CAVEATS - PLEASE READ" -ForegroundColor Yellow
 Write-Host "==========================================================================" -ForegroundColor Yellow
 Write-Host "  * The Android emulator needs HARDWARE ACCELERATION (WHPX / Hyper-V on" -ForegroundColor White
-Write-Host "    Windows, or HAXM on older machines). Many locked-down lab machines" -ForegroundColor White
-Write-Host "    DISABLE virtualization or forbid enabling it without admin rights." -ForegroundColor White
-Write-Host "    On such hardware the emulator will NOT launch even though this" -ForegroundColor White
-Write-Host "    installer reported success." -ForegroundColor White
+Write-Host "    Windows, or HAXM on older machines). It CAN work on lab machines where" -ForegroundColor White
+Write-Host "    WHPX / Hyper-V is available - this has been CONFIRMED on at least one" -ForegroundColor White
+Write-Host "    lab machine - but it is SLOW to boot and still a BETA. On hardware where" -ForegroundColor White
+Write-Host "    virtualization is disabled in BIOS or blocked without admin rights, the" -ForegroundColor White
+Write-Host "    emulator will NOT launch even though this installer reported success." -ForegroundColor White
 Write-Host "  * The Android SDK + system image download is MULTIPLE GIGABYTES." -ForegroundColor White
-Write-Host "  * This is an EXPERIMENTAL / BETA path and is UNTESTED on lab hardware." -ForegroundColor White
+Write-Host "  * This is an EXPERIMENTAL / BETA path; it has worked on at least one lab" -ForegroundColor White
+Write-Host "    machine but is not yet widely tested, so expect rough edges." -ForegroundColor White
 Write-Host "  * A portable JDK is now downloaded and configured AUTOMATICALLY by this" -ForegroundColor White
 Write-Host "    script (no manual Java install needed)." -ForegroundColor White
 Write-Host "  * Your existing install.ps1 environment is NOT affected by this script." -ForegroundColor White
