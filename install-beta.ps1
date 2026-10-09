@@ -452,7 +452,9 @@ if (-not (Test-Path "$ToolsFolder\sqlite\sqlite3.exe")) {
     }
 }
 if (-not (Test-Path "$ToolsFolder\sqlite\sqlite3.wasm")) {
-    $UrlSQLiteWasm = "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-2.4.6/sqlite3.wasm"
+    # Must match the sqlite3 Dart package version the course projects pin
+    # (sqlite3 3.5.2). A mismatched wasm fails to load in the browser.
+    $UrlSQLiteWasm = "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.5.2/sqlite3.wasm"
     Download-FileWithRetry $UrlSQLiteWasm "$ToolsFolder\sqlite\sqlite3.wasm" "SQLite WebAssembly Binary (sqlite3.wasm)" | Out-Null
 }
 Log-Message "[OK] Git and SQLite CLI tools ready." "Green"

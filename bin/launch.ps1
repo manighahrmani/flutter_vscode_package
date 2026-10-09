@@ -381,6 +381,8 @@ function Invoke-ProjectPreparation([string]$destPath) {
     if ((Test-Path "$destPath\pubspec.yaml") -and ((Get-Content "$destPath\pubspec.yaml" -Raw) -match "sqflite")) {
         $webDir = "$destPath\web"
         if (-not (Test-Path $webDir)) { New-Item -Path $webDir -ItemType Directory -Force | Out-Null }
+        # The wasm version MUST match the sqlite3 Dart package the project pins
+        # (sqlite3 3.5.2); a mismatch fails to load in the browser.
         if (-not (Test-Path "$webDir\sqlite3.wasm")) {
             $sqliteWasmSource = "$ToolsDir\sqlite\sqlite3.wasm"
             if (Test-Path $sqliteWasmSource) {
@@ -389,10 +391,21 @@ function Invoke-ProjectPreparation([string]$destPath) {
             } else {
                 try {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                    Invoke-WebRequest -Uri "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-2.4.6/sqlite3.wasm" -OutFile "$webDir\sqlite3.wasm" -TimeoutSec 15
+                    Invoke-WebRequest -Uri "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.5.2/sqlite3.wasm" -OutFile "$webDir\sqlite3.wasm" -TimeoutSec 15
                     Write-Host "[OK] Downloaded sqlite3.wasm to web directory." -ForegroundColor Green
                 } catch {}
             }
+        }
+        # sqflite_common_ffi_web also needs its shared worker alongside the wasm.
+        if (-not (Test-Path "$webDir\sqflite_sw.js")) {
+            try {
+                Push-Location $destPath
+                & dart run sqflite_common_ffi_web:setup 2>&1 | Out-Null
+                Pop-Location
+                if (Test-Path "$webDir\sqflite_sw.js") {
+                    Write-Host "[OK] sqflite shared worker (sqflite_sw.js) deployed to web directory." -ForegroundColor Green
+                }
+            } catch {}
         }
     }
 
