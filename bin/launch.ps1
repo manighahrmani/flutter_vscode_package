@@ -7,6 +7,28 @@ $ScriptRoot = Split-Path -Parent $PSScriptRoot
 $ToolsDir   = "$ScriptRoot\tools"
 $VSCodeExe  = "$ScriptRoot\vscode\Code.exe"
 $Workspace  = "$ScriptRoot\workspace"
+# Cloned repositories live BESIDE the bundle folder (in its parent directory),
+# not inside the bundle, so a student's project is a normal folder on disk.
+$ProjectsRoot = Split-Path -Parent $ScriptRoot
+# The folder VS Code finally opens. Defaults to the in-bundle workspace (for the
+# starter app / existing project) and is redirected to the sibling clone folder
+# when the student provides a repository URL.
+$ProjectPath = $Workspace
+
+# Turns a repository URL into a destination folder beside the bundle, named
+# after the repository (e.g. https://github.com/me/sandwich_shop(.git) ->
+# <ProjectsRoot>\sandwich_shop). Falls back to "flutter_project" if the name
+# cannot be derived.
+function Get-CloneDestination([string]$url) {
+    $leaf = $url.Trim().TrimEnd('/').Split('/')[-1]
+    if ($leaf -like "*.git") {
+        $leaf = $leaf.Substring(0, $leaf.Length - 4)
+    }
+    if ([string]::IsNullOrWhiteSpace($leaf)) {
+        $leaf = "flutter_project"
+    }
+    return (Join-Path $ProjectsRoot $leaf)
+}
 $TelemetryEndpoint = "https://script.google.com/macros/s/AKfycbx4ztCT_U7XE9sNUFy4GNI5rvmptu_r1I20CoPbIZSy9a72ZaeZeIfRFY39X9NFpZA/exec"
 
 $launchStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -567,13 +589,16 @@ if ($hasExistingValidProject) {
             $launchEvent = "LAUNCH_CLONE"
             $choiceDetail = "Cloned repository: $forkUrl"
             Log-Launch "Cloning repository: $forkUrl"
-            Remove-Item $Workspace -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "Cloning $forkUrl..." -ForegroundColor Green
-            if ($gitAvailable) {
-                & git clone $forkUrl $Workspace
+            $ProjectPath = Get-CloneDestination $forkUrl
+            Write-Host "Cloning $forkUrl into:" -ForegroundColor Green
+            Write-Host "  $ProjectPath" -ForegroundColor White
+            if (Test-Path "$ProjectPath\.git") {
+                Write-Host "A clone already exists there; opening it without re-cloning." -ForegroundColor Yellow
+            } elseif ($gitAvailable) {
+                & git clone $forkUrl $ProjectPath
             }
-            if (-not (Test-Path "$Workspace\pubspec.yaml")) {
-                Initialize-StarterFlutterProject $Workspace
+            if (-not (Test-Path "$ProjectPath\pubspec.yaml")) {
+                Initialize-StarterFlutterProject $ProjectPath
             }
         }
     } elseif ($action -eq "3") {
@@ -605,13 +630,17 @@ if ($hasExistingValidProject) {
         $launchEvent = "LAUNCH_CLONE"
         $choiceDetail = "Cloned repository: $repoUrl"
         Log-Launch "Cloning initial repository: $repoUrl"
-        Write-Host "Cloning from $repoUrl..." -ForegroundColor Green
-        if ($gitAvailable) {
-            & git clone $repoUrl $Workspace
+        $ProjectPath = Get-CloneDestination $repoUrl
+        Write-Host "Cloning $repoUrl into:" -ForegroundColor Green
+        Write-Host "  $ProjectPath" -ForegroundColor White
+        if (Test-Path "$ProjectPath\.git") {
+            Write-Host "A clone already exists there; opening it without re-cloning." -ForegroundColor Yellow
+        } elseif ($gitAvailable) {
+            & git clone $repoUrl $ProjectPath
         }
-        if (-not (Test-Path "$Workspace\pubspec.yaml")) {
+        if (-not (Test-Path "$ProjectPath\pubspec.yaml")) {
             Write-Host "Clone failed or empty repo. Initializing starter project..." -ForegroundColor Yellow
-            Initialize-StarterFlutterProject $Workspace
+            Initialize-StarterFlutterProject $ProjectPath
         }
     } else {
         # Student pressed Enter -> Generate Hello World / Starter Flutter Project immediately!
@@ -623,7 +652,7 @@ if ($hasExistingValidProject) {
 }
 
 # 5. Resolve dependencies and ensure target device is Edge
-Invoke-ProjectPreparation $Workspace
+Invoke-ProjectPreparation $ProjectPath
 
 # 6. Send launch telemetry to Google Apps Script Web App
 Send-LaunchTelemetry $launchEvent $choiceDetail "SUCCESS" 0
@@ -654,20 +683,20 @@ if (Test-Path $VSCodeExe) {
     $vscodeArgs = @(
         "--extensions-dir", $extDir,
         "--user-data-dir", $userDataDir,
-        $Workspace
+        $ProjectPath
     )
     Start-Process -FilePath $VSCodeExe -ArgumentList $vscodeArgs -WorkingDirectory $ScriptRoot -WindowStyle Normal
 } else {
     # If code.exe is on system PATH as fallback
     $sysCode = Get-Command code -ErrorAction SilentlyContinue
     if ($sysCode) {
-        Start-Process "code" -ArgumentList "`"$Workspace`""
+        Start-Process "code" -ArgumentList "`"$ProjectPath`""
     } else {
         Write-Host "=========================================================" -ForegroundColor Green
         Write-Host "Project folder prepared at:" -ForegroundColor White
-        Write-Host "  $Workspace" -ForegroundColor Cyan
+        Write-Host "  $ProjectPath" -ForegroundColor Cyan
         Write-Host "Opening project in Windows Explorer..." -ForegroundColor White
         Write-Host "=========================================================" -ForegroundColor Green
-        Start-Process "explorer.exe" -ArgumentList "`"$Workspace`""
+        Start-Process "explorer.exe" -ArgumentList "`"$ProjectPath`""
     }
 }
