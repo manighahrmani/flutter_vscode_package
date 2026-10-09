@@ -954,6 +954,357 @@ Log-Message "Verification Summary: $($CheckFailures) Check Failure(s) recorded."
 # usable even if the experimental Android pieces failed, so we never let the
 # BETA path corrupt or block an existing install.
 
+# =====================================================================
+#            ANDROID EMULATOR DIAGNOSTICS (BETA)
+# =====================================================================
+# Collects everything we need to decide WHY the Android emulator does (or does
+# not) run on a given lab machine. Writes BOTH to the console (Log-Message) AND
+# to a dedicated diagnostics log. Every item is wrapped in its own try/catch so
+# a single failure never aborts the rest of the collection.
+#
+# Two separate log files are produced for the student to send back:
+#   * android_emulator_diagnostics.log - this whole diagnostics section
+#   * android_emulator_launch.log      - raw emulator stdout/stderr (Part 2)
+$DiagLog   = "$env:USERPROFILE\Downloads\android_emulator_diagnostics.log"
+$LaunchLog = "$env:USERPROFILE\Downloads\android_emulator_launch.log"
+
+# Emulator / tool paths used across the diagnostics (defined up front so each
+# labelled block can reference them even if an earlier Android step was skipped).
+$emulatorExeDiag = "$AndroidFolder\emulator\emulator.exe"
+$adbExeDiag      = "$AndroidFolder\platform-tools\adb.exe"
+$flutterBatDiag  = "$ToolsFolder\flutter\bin\flutter.bat"
+
+# Append-to-diagnostics-log helper. Writes to the console via Log-Message AND
+# appends the same line to $DiagLog. The $overwrite switch starts a fresh file.
+function Write-Diag([string]$msg, [string]$color="Gray", [bool]$overwrite=$false) {
+    Log-Message $msg $color
+    try {
+        if ($overwrite) {
+            $msg | Out-File -FilePath $DiagLog -Encoding utf8 -Force
+        } else {
+            $msg | Out-File -FilePath $DiagLog -Encoding utf8 -Append
+        }
+    } catch {}
+}
+
+Log-Message ""
+Log-Message "=========================================================" "Cyan"
+Log-Message "          ANDROID EMULATOR DIAGNOSTICS (BETA)            " "Cyan"
+Log-Message "=========================================================" "Cyan"
+# OVERWRITE the diagnostics log at the start of the section, then APPEND below.
+Write-Diag "===== ANDROID EMULATOR DIAGNOSTICS =====" "Cyan" $true
+Write-Diag "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" "DarkGray"
+Write-Diag "Computer: $env:COMPUTERNAME | User: $env:USERNAME" "DarkGray"
+Write-Diag "PowerShell: $($PSVersionTable.PSVersion)" "DarkGray"
+Write-Diag ""
+
+# Holds the one-line acceleration verdict derived from -accel-check (used in the
+# final SUMMARY). Stays 'unknown' unless the self-check tells us otherwise.
+$accelVerdict = "unknown"
+
+# --- [1] systeminfo virtualization lines + OS caption/version/build ---
+Write-Diag "----- [1] systeminfo (virtualization) + OS -----" "Cyan"
+try {
+    $siRaw = systeminfo 2>&1 | Out-String
+    $siLines = $siRaw | Select-String -Pattern 'Hyper-V','Virtualization','VM Monitor Mode','Second Level Address Translation','Data Execution Prevention'
+    if ($siLines) {
+        foreach ($l in $siLines) { Write-Diag ("    " + $l.ToString().Trim()) "Gray" }
+    } else {
+        Write-Diag "    (no matching virtualization lines in systeminfo)" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    [FAIL] systeminfo failed: $_" "Red"
+}
+try {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    Write-Diag "    OS Caption: $($os.Caption)" "Gray"
+    Write-Diag "    OS Version: $($os.Version)  Build: $($os.BuildNumber)" "Gray"
+} catch {
+    Write-Diag "    [FAIL] Get-CimInstance Win32_OperatingSystem failed: $_" "Red"
+}
+Write-Diag ""
+
+# --- [2] CPU-level virtualization (Win32_Processor) ---
+Write-Diag "----- [2] CPU virtualization (Win32_Processor) -----" "Cyan"
+try {
+    $cpu = Get-CimInstance Win32_Processor -ErrorAction Stop |
+        Select-Object Name, VirtualizationFirmwareEnabled, SecondLevelAddressTranslationExtensions, VMMonitorModeExtensions
+    foreach ($c in $cpu) {
+        Write-Diag "    Name: $($c.Name)" "Gray"
+        Write-Diag "    VirtualizationFirmwareEnabled: $($c.VirtualizationFirmwareEnabled)" "Gray"
+        Write-Diag "    SecondLevelAddressTranslationExtensions: $($c.SecondLevelAddressTranslationExtensions)" "Gray"
+        Write-Diag "    VMMonitorModeExtensions: $($c.VMMonitorModeExtensions)" "Gray"
+    }
+} catch {
+    Write-Diag "    [FAIL] Get-CimInstance Win32_Processor failed: $_" "Red"
+}
+Write-Diag ""
+
+# --- [3] Windows optional features + hypervisorlaunchtype (no admin needed) ---
+Write-Diag "----- [3] Optional features (Hyper-V / VirtualMachinePlatform) -----" "Cyan"
+try {
+    $feats = Get-CimInstance -ClassName Win32_OptionalFeature -ErrorAction Stop |
+        Where-Object { $_.Name -match 'Hyper|HypervisorPlatform|VirtualMachinePlatform' } |
+        Select-Object Name, InstallState
+    if ($feats) {
+        # InstallState 1 = enabled, 2 = disabled/absent.
+        foreach ($f in $feats) {
+            Write-Diag "    $($f.Name) : InstallState=$($f.InstallState)  (1=enabled)" "Gray"
+        }
+    } else {
+        Write-Diag "    (no matching optional features found)" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    [FAIL] Get-CimInstance Win32_OptionalFeature failed: $_" "Red"
+}
+try {
+    # bcdedit may be denied without elevation; wrapped so it never aborts.
+    $bcd = bcdedit /enum "{current}" 2>&1 | Select-String -Pattern 'hypervisorlaunchtype'
+    if ($bcd) {
+        foreach ($b in $bcd) { Write-Diag ("    " + $b.ToString().Trim()) "Gray" }
+    } else {
+        Write-Diag "    (hypervisorlaunchtype not reported by bcdedit)" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    [FAIL] bcdedit failed (likely denied without admin): $_" "DarkYellow"
+}
+Write-Diag ""
+
+# --- [4] THE KEY SIGNAL: emulator -accel-check (HAXM/WHPX/AEHD self-check) ---
+# This is the single most useful signal: the emulator itself reports whether a
+# hypervisor/acceleration backend is available and, if not, exactly why.
+Write-Diag "----- [4] emulator -accel-check (KEY acceleration self-check) -----" "Cyan"
+try {
+    if (Test-Path $emulatorExeDiag) {
+        $accelOut = "$env:TEMP\accel_check_out.txt"
+        $accelErr = "$env:TEMP\accel_check_err.txt"
+        if (Test-Path $accelOut) { Remove-Item $accelOut -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $accelErr) { Remove-Item $accelErr -Force -ErrorAction SilentlyContinue }
+        $accelProc = Start-Process -FilePath $emulatorExeDiag -ArgumentList "-accel-check" `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $accelOut -RedirectStandardError $accelErr
+        $accelText = ""
+        if (Test-Path $accelOut) { $accelText += (Get-Content $accelOut -Raw) }
+        if (Test-Path $accelErr) { $accelText += (Get-Content $accelErr -Raw) }
+        Remove-Item $accelOut, $accelErr -Force -ErrorAction SilentlyContinue
+        Write-Diag "    Exit code: $($accelProc.ExitCode)" "Gray"
+        if (-not [string]::IsNullOrWhiteSpace($accelText)) {
+            foreach ($line in ($accelText -split "`r?`n")) {
+                if ($line.Trim().Length -gt 0) { Write-Diag ("    " + $line.Trim()) "Gray" }
+            }
+        } else {
+            Write-Diag "    (no output captured from -accel-check)" "DarkYellow"
+        }
+        # Exit code 0 from -accel-check == acceleration is usable.
+        if ($accelProc.ExitCode -eq 0) {
+            $accelVerdict = "available"
+        } else {
+            $accelVerdict = "unavailable"
+        }
+    } else {
+        Write-Diag "    [FAIL] emulator.exe not found at $emulatorExeDiag" "Red"
+    }
+} catch {
+    Write-Diag "    [FAIL] -accel-check failed to run: $_" "Red"
+}
+Write-Diag ""
+
+# --- [5] List AVDs (avdmanager AND emulator -list-avds) ---
+Write-Diag "----- [5] Installed AVDs -----" "Cyan"
+try {
+    if (Test-Path $avdManagerBat) {
+        $avdOut = & $avdManagerBat list avd 2>&1 | Out-String
+        foreach ($line in ($avdOut -split "`r?`n")) {
+            if ($line.Trim().Length -gt 0) { Write-Diag ("    [avdmanager] " + $line.Trim()) "Gray" }
+        }
+    } else {
+        Write-Diag "    [avdmanager] not present at $avdManagerBat" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    [FAIL] avdmanager list avd failed: $_" "Red"
+}
+try {
+    if (Test-Path $emulatorExeDiag) {
+        $listOut = & $emulatorExeDiag -list-avds 2>&1 | Out-String
+        foreach ($line in ($listOut -split "`r?`n")) {
+            if ($line.Trim().Length -gt 0) { Write-Diag ("    [emulator] " + $line.Trim()) "Gray" }
+        }
+    } else {
+        Write-Diag "    [emulator] not present at $emulatorExeDiag" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    [FAIL] emulator -list-avds failed: $_" "Red"
+}
+Write-Diag ""
+
+# --- [6] Developer Mode state (registry; read without admin) ---
+Write-Diag "----- [6] Windows Developer Mode -----" "Cyan"
+try {
+    $devKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+    $devProp = Get-ItemProperty -Path $devKey -Name "AllowDevelopmentWithoutDevLicense" -ErrorAction Stop
+    $devVal = $devProp.AllowDevelopmentWithoutDevLicense
+    if ($devVal -eq 1) {
+        Write-Diag "    Developer Mode: ON (AllowDevelopmentWithoutDevLicense=1)" "Green"
+    } else {
+        Write-Diag "    Developer Mode: OFF (AllowDevelopmentWithoutDevLicense=$devVal)" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    Developer Mode: UNKNOWN (registry value not readable): $_" "DarkYellow"
+}
+Write-Diag ""
+
+# --- [7] flutter doctor -v (can be slow) ---
+Write-Diag "----- [7] flutter doctor -v (may be slow) -----" "Cyan"
+try {
+    if (Test-Path $flutterBatDiag) {
+        $docOut = & $flutterBatDiag doctor -v 2>&1 | Out-String
+        foreach ($line in ($docOut -split "`r?`n")) {
+            if ($line.Trim().Length -gt 0) { Write-Diag ("    " + $line.TrimEnd()) "Gray" }
+        }
+    } else {
+        Write-Diag "    flutter.bat not present at $flutterBatDiag" "DarkYellow"
+    }
+} catch {
+    Write-Diag "    [FAIL] flutter doctor -v failed: $_" "Red"
+}
+Write-Diag ""
+
+# =====================================================================
+#   ATTEMPTING EMULATOR LAUNCH (software rendering, verbose)
+# =====================================================================
+# Launch the emulator DIRECTLY (NOT via flutter) with software rendering and
+# verbose/kernel logging, capturing raw stdout+stderr to $LaunchLog. A working
+# emulator runs forever, so we do NOT block on it: we start it, wait ~60s, probe
+# `adb devices`, record the result, then terminate whatever we started.
+#
+# IMPORTANT: -gpu swiftshader_indirect only swaps the GPU rendering path to
+# software; it still requires CPU VIRTUALIZATION (a hypervisor: WHPX/Hyper-V/
+# AEHD/HAXM) for the x86_64 system image. So if [4] -accel-check reported NO
+# acceleration, this launch will almost certainly still fail - and that failure
+# is itself the answer (the machine cannot run an x86 emulator without a
+# hypervisor, which usually needs admin to enable).
+Write-Diag "----- ATTEMPTING EMULATOR LAUNCH (software rendering, verbose) -----" "Cyan"
+# The current AVD uses an x86_64 image (needs a hypervisor). An ARM64 image
+# (e.g. system-images;android-34;google_apis;arm64-v8a) would avoid the
+# hypervisor requirement but runs under FULL CPU EMULATION on an x86 host -
+# extremely slow and likely not worth it. We do NOT switch the default image
+# here; this is documented only.
+Write-Diag "    NOTE: AVD '$AndroidAvdName' uses an x86_64 image (needs a hypervisor)." "DarkYellow"
+Write-Diag "    NOTE: An ARM64 image would avoid that requirement but runs via full" "DarkYellow"
+Write-Diag "          emulation (extremely slow); the default image is NOT changed." "DarkYellow"
+
+$launchSucceeded = $false
+try {
+    if (Test-Path $emulatorExeDiag) {
+        # Fresh launch log for this attempt.
+        "" | Out-File -FilePath $LaunchLog -Encoding utf8 -Force
+        $emuArgs = @(
+            "-avd", $AndroidAvdName,
+            "-gpu", "swiftshader_indirect",
+            "-no-snapshot",
+            "-no-boot-anim",
+            "-no-audio",
+            "-verbose",
+            "-show-kernel"
+        )
+        Write-Diag "    Launch command:" "Gray"
+        Write-Diag "      $emulatorExeDiag $($emuArgs -join ' ')" "Gray"
+
+        # Non-blocking launch; keep the PID so we can terminate it afterwards.
+        $emuProc = Start-Process -FilePath $emulatorExeDiag -ArgumentList $emuArgs `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput $LaunchLog -RedirectStandardError "$LaunchLog.err"
+        $emuPid = $emuProc.Id
+        Write-Diag "    Launched emulator (PID $emuPid). Waiting ~60s for boot..." "Gray"
+        Start-Sleep -Seconds 60
+
+        # Probe adb: did emulator-5554 come up as 'device' (SUCCESS)?
+        $adbText = ""
+        try {
+            if (Test-Path $adbExeDiag) {
+                $adbText = & $adbExeDiag devices 2>&1 | Out-String
+            } else {
+                $adbText = "(adb not found at $adbExeDiag)"
+            }
+        } catch {
+            $adbText = "adb devices failed: $_"
+        }
+        Write-Diag "    adb devices output:" "Gray"
+        foreach ($line in ($adbText -split "`r?`n")) {
+            if ($line.Trim().Length -gt 0) { Write-Diag ("      " + $line.Trim()) "Gray" }
+        }
+        if ($adbText -match 'emulator-5554\s+device') {
+            $launchSucceeded = $true
+        }
+
+        # Fold the emulator's stderr into the launch log, then record the first
+        # ~40 lines of the launch log into the diagnostics log.
+        try {
+            if (Test-Path "$LaunchLog.err") {
+                $errContent = Get-Content "$LaunchLog.err" -Raw -ErrorAction SilentlyContinue
+                if (-not [string]::IsNullOrWhiteSpace($errContent)) {
+                    "----- STDERR -----`r`n$errContent" | Out-File -FilePath $LaunchLog -Encoding utf8 -Append
+                }
+                Remove-Item "$LaunchLog.err" -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+        Write-Diag "    First 40 lines of launch log ($LaunchLog):" "Gray"
+        try {
+            $head = Get-Content $LaunchLog -TotalCount 40 -ErrorAction SilentlyContinue
+            foreach ($line in $head) {
+                if ($line.Trim().Length -gt 0) { Write-Diag ("      " + $line.TrimEnd()) "DarkGray" }
+            }
+        } catch {
+            Write-Diag "      (could not read launch log)" "DarkYellow"
+        }
+
+        # Terminate the emulator we started, plus any child qemu processes, so
+        # nothing is left running after diagnostics.
+        try {
+            taskkill /PID $emuPid /T /F 2>&1 | Out-Null
+        } catch {}
+        try {
+            Get-Process -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProcessName -match 'qemu-system|emulator' } |
+                ForEach-Object {
+                    try { taskkill /PID $_.Id /T /F 2>&1 | Out-Null } catch {}
+                }
+        } catch {}
+        Write-Diag "    Emulator process(es) terminated (cleanup done)." "DarkGray"
+    } else {
+        Write-Diag "    [FAIL] emulator.exe not found at $emulatorExeDiag; cannot attempt launch." "Red"
+    }
+} catch {
+    Write-Diag "    [FAIL] Emulator launch attempt errored: $_" "Red"
+}
+
+if ($launchSucceeded) {
+    Write-Diag "    RESULT: Software-rendered launch SUCCEEDED (emulator-5554 came up)." "Green"
+} else {
+    Write-Diag "    RESULT: Software-rendered launch FAILED (emulator-5554 not 'device')." "Red"
+    Write-Diag "    See the launch log for details: $LaunchLog" "Yellow"
+}
+Write-Diag ""
+
+# =====================================================================
+#   DIAGNOSTICS SUMMARY
+# =====================================================================
+Write-Diag "----- DIAGNOSTICS SUMMARY -----" "Cyan"
+# One-line verdict derived from the -accel-check result.
+if ($accelVerdict -eq "available") {
+    $verdictLine = "Acceleration AVAILABLE - the emulator should be able to run."
+} elseif ($accelVerdict -eq "unavailable") {
+    $verdictLine = "Acceleration NOT available - emulator cannot run without admin to enable WHPX/Hyper-V."
+} else {
+    $verdictLine = "Acceleration status UNKNOWN - see the -accel-check output above."
+}
+Write-Diag "    Verdict: $verdictLine" $(if ($accelVerdict -eq "available") { "Green" } else { "Yellow" })
+Write-Diag "    Diagnostics log: $DiagLog" "Cyan"
+Write-Diag "    Launch log:      $LaunchLog" "Cyan"
+Write-Diag "    Please send BOTH log files back so we can diagnose your machine." "Cyan"
+Write-Diag "    The web (Edge/Chrome) path works regardless and needs NONE of this." "Green"
+Write-Diag ""
+
 # ----------------- Finish -----------------
 $launcherBat = "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat"
 
@@ -986,6 +1337,13 @@ Write-Host "" -ForegroundColor White
 Write-Host "  >> PLEASE REPORT BACK whether the emulator actually LAUNCHES on your" -ForegroundColor Magenta
 Write-Host "     machine (yes/no + any error), so we know if this path is viable." -ForegroundColor Magenta
 Write-Host "==========================================================================" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "==========================================================================" -ForegroundColor Cyan
+Write-Host "  EMULATOR DIAGNOSTICS - PLEASE SEND BOTH LOG FILES BACK" -ForegroundColor Cyan
+Write-Host "==========================================================================" -ForegroundColor Cyan
+Write-Host "  Diagnostics log: $env:USERPROFILE\Downloads\android_emulator_diagnostics.log" -ForegroundColor Green
+Write-Host "  Launch log:      $env:USERPROFILE\Downloads\android_emulator_launch.log" -ForegroundColor Green
+Write-Host "  The web (Edge/Chrome) path works regardless and needs none of this." -ForegroundColor White
 Write-Host ""
 Write-Host "RUNNING A FLUTTER PROJECT ON THE EMULATOR:" -ForegroundColor Cyan
 Write-Host "  A Flutter project must have Android enabled to run on the emulator." -ForegroundColor White
