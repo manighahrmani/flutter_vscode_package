@@ -1338,7 +1338,22 @@ try {
                     try { taskkill /PID $_.Id /T /F 2>&1 | Out-Null } catch {}
                 }
         } catch {}
-        Write-Diag "    Emulator process(es) terminated (cleanup done)." "DarkGray"
+        # CRITICAL: a force-killed emulator leaves lock files in the AVD folder.
+        # If they remain, the student's own `flutter emulators --launch` fails
+        # with "Running multiple emulators with the same AVD ... use -read-only".
+        # Reset adb and delete the stale locks so the next launch is clean.
+        $adbExeDiag = Join-Path $AndroidFolder "platform-tools\adb.exe"
+        if (Test-Path $adbExeDiag) {
+            try { & $adbExeDiag kill-server 2>&1 | Out-Null } catch {}
+        }
+        $avdLockDir = Join-Path $env:USERPROFILE ".android\avd\$AndroidAvdName.avd"
+        if (Test-Path $avdLockDir) {
+            try {
+                Get-ChildItem -Path $avdLockDir -Recurse -Include "*.lock","hardware-qemu.ini.lock","multiinstance.lock" -ErrorAction SilentlyContinue |
+                    ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+            } catch {}
+        }
+        Write-Diag "    Emulator process(es) terminated and AVD locks cleared (cleanup done)." "DarkGray"
     } else {
         Write-Diag "    [FAIL] emulator.exe not found at $emulatorExeDiag; cannot attempt launch." "Red"
     }
@@ -1385,9 +1400,11 @@ Write-Diag ""
 # ----------------- Finish -----------------
 $launcherBat = "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat"
 
+$totalMinutes = [Math]::Round($installStopwatch.Elapsed.TotalMinutes, 1)
 Log-Message "=========================================================" "Green"
 Log-Message "  Android Emulator BETA setup finished.                  " "Green"
 Log-Message "  Installed at: $DestFolder                              " "Green"
+Log-Message "  Total install time: $totalMinutes minutes              " "Green"
 Log-Message "=========================================================" "Green"
 Log-Message ""
 Write-Host ""
