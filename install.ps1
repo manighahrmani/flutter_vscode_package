@@ -28,7 +28,7 @@ $IssuesUrl    = "https://github.com/manighahrmani/flutter_vscode_package/issues"
 # Component Download URLs
 $UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/releases/latest/download/flutter_vscode_package.zip"
 $UrlVSCode         = "https://update.code.visualstudio.com/latest/win32-x64-archive/stable"
-$FlutterVersion    = "3.47.5"
+$FlutterVersion    = "3.47.7"
 $UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_$FlutterVersion-stable.zip"
 $UrlGit            = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip"
 $UrlSQLite         = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3450300.zip"
