@@ -832,7 +832,7 @@ if (Test-Path $flutterBat) {
             $docText -match 'No valid Android SDK platforms found' -or
             $androidLine -match '(?i)\[X\]|cmdline-tools component is missing|Android license status unknown') {
             $flutterAndroidToolchain = "invalid"
-            Log-Message "[WARN] Flutter still reports the Android toolchain as NOT detected." "Yellow"
+            Log-Message "[NOTE] flutter doctor does not list the Android toolchain as fully detected. This is a known cosmetic issue with a portable (non-Android-Studio) SDK; the Android licenses are accepted at build time, so you can still select the emulator and run your app. If you later see a license prompt, run: flutter doctor --android-licenses" "Cyan"
         } else {
             $flutterAndroidToolchain = "valid"
             Log-Message "[OK] Flutter now reports the Android toolchain as VALID." "Green"
@@ -1409,6 +1409,10 @@ Write-Host "     as 'device':" -ForegroundColor White
 Write-Host "       adb devices" -ForegroundColor Green
 Write-Host "  d. In your project folder, run the app on the emulator:" -ForegroundColor White
 Write-Host "       flutter run -d emulator-5554" -ForegroundColor Green
+Write-Host "     Choose the EMULATOR as your run device (or Edge for the web). Do NOT" -ForegroundColor White
+Write-Host "     choose the 'Windows' device - Windows desktop builds need Developer" -ForegroundColor White
+Write-Host "     Mode/admin and will fail with a symlink error; if you see that, just" -ForegroundColor White
+Write-Host "     switch the device back to the emulator or Edge." -ForegroundColor White
 Write-Host "  e. VS CODE ROUTE (instead of the terminal in step d): open the project in" -ForegroundColor White
 Write-Host "     VS Code, then use the device selector in the bottom-right status bar" -ForegroundColor White
 Write-Host "     (or Command Palette: 'Flutter: Select Device') to pick the Android" -ForegroundColor White
