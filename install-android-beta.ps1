@@ -1448,14 +1448,12 @@ Write-Host "     can copy its database out of the emulator with run-as (no root 
 Write-Host "     and open it with the shipped SQLite Viewer VS Code extension. The app" -ForegroundColor White
 Write-Host "     (package com.example.sandwich_shop) creates sandwich_data.db via its" -ForegroundColor White
 Write-Host "     SandwichDatabase. Run the app at least once first (so the database" -ForegroundColor White
-Write-Host "     exists), then copy it out in TWO steps (this avoids the PowerShell" -ForegroundColor White
-Write-Host "     text redirection that corrupts a binary file). Run from your project:" -ForegroundColor White
-Write-Host "       adb shell run-as com.example.sandwich_shop cp databases/sandwich_data.db /sdcard/sandwich_data.db" -ForegroundColor Green
-Write-Host "       adb pull /sdcard/sandwich_data.db sandwich_shop.db" -ForegroundColor Green
+Write-Host "     exists), then copy it out with adb exec-out (this streams raw bytes," -ForegroundColor White
+Write-Host "     avoiding the PowerShell redirection corruption). Run from your project:" -ForegroundColor White
+Write-Host "       adb exec-out run-as com.example.sandwich_shop cat databases/sandwich_data.db > sandwich_shop.db" -ForegroundColor Green
 Write-Host "     then open sandwich_shop.db in VS Code (the SQLite Viewer extension" -ForegroundColor White
-Write-Host "     shows the tables and rows). Do NOT use 'adb shell ... > file.db' in" -ForegroundColor White
-Write-Host "     PowerShell - it re-encodes the bytes and the viewer reports" -ForegroundColor White
-Write-Host "     'file is not a database'." -ForegroundColor White
+Write-Host "     shows the tables and rows). Use adb EXEC-OUT, not 'adb shell ... >'," -ForegroundColor White
+Write-Host "     and do NOT copy via /sdcard (the run-as sandbox cannot write there)." -ForegroundColor White
 Write-Host "  REMEMBER THE ORDER: boot the emulator and wait for the HOME screen BEFORE" -ForegroundColor Yellow
 Write-Host "  running the app. A black screen means it is still booting, not broken." -ForegroundColor Yellow
 Write-Host ""
