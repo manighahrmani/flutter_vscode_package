@@ -762,6 +762,14 @@ if (Test-Path $sdkManagerBat) {
     Invoke-AndroidTool $sdkManagerBat @("--sdk_root=$AndroidFolder", "emulator") $yesLines "Install emulator" | Out-Null
     Invoke-AndroidTool $sdkManagerBat @("--sdk_root=$AndroidFolder", $AndroidPlatform) $yesLines "Install $AndroidPlatform" | Out-Null
     Invoke-AndroidTool $sdkManagerBat @("--sdk_root=$AndroidFolder", $AndroidSystemImage) $yesLines "Install $AndroidSystemImage" | Out-Null
+
+    Log-Message "Pre-installing build-tools 35, platform android-36, and NDK r28c to speed up the FIRST emulator build (so flutter run does not download them mid-build)..." "DarkGray"
+    $ok = Invoke-AndroidTool $sdkManagerBat @("--sdk_root=$AndroidFolder", "build-tools;35.0.0") $yesLines "Install build-tools;35.0.0 (first-build speedup)"
+    if (-not $ok) { Log-Message "[WARN] Could not pre-install build-tools;35.0.0; the install still succeeds and Gradle will download it on the first build." "DarkYellow" }
+    $ok = Invoke-AndroidTool $sdkManagerBat @("--sdk_root=$AndroidFolder", "platforms;android-36") $yesLines "Install platforms;android-36 (first-build speedup)"
+    if (-not $ok) { Log-Message "[WARN] Could not pre-install platforms;android-36; the install still succeeds and it will download on the first build." "DarkYellow" }
+    $ok = Invoke-AndroidTool $sdkManagerBat @("--sdk_root=$AndroidFolder", "ndk;28.2.13676358") $yesLines "Install ndk;28.2.13676358 (android-ndk-r28c, first-build speedup)"
+    if (-not $ok) { Log-Message "[WARN] Could not pre-install ndk;28.2.13676358 (~750 MB); the install still succeeds and the NDK will download on the first build." "DarkYellow" }
 } else {
     Log-Message "[FAIL] sdkmanager not present; skipping SDK package install and AVD creation." "Red"
 }
@@ -1435,6 +1443,14 @@ Write-Host "     VS Code, then use the device selector in the bottom-right statu
 Write-Host "     (or Command Palette: 'Flutter: Select Device') to pick the Android" -ForegroundColor White
 Write-Host "     emulator. It only appears once the emulator is BOOTED and flutter" -ForegroundColor White
 Write-Host "     doctor sees the SDK. Then press F5 / Run." -ForegroundColor White
+Write-Host "  f. To inspect the SQLite database: because the app runs in DEBUG mode you" -ForegroundColor White
+Write-Host "     can copy its database out of the emulator with run-as (no root needed)" -ForegroundColor White
+Write-Host "     and open it with the shipped SQLite Viewer VS Code extension. The app" -ForegroundColor White
+Write-Host "     (package com.example.sandwich_shop) creates sandwich_data.db via its" -ForegroundColor White
+Write-Host "     SandwichDatabase. Run this from your project folder:" -ForegroundColor White
+Write-Host "       adb shell `"run-as com.example.sandwich_shop cat databases/sandwich_data.db`" > sandwich_shop.db" -ForegroundColor Green
+Write-Host "     then open sandwich_shop.db in VS Code (the SQLite Viewer extension" -ForegroundColor White
+Write-Host "     shows the tables and rows)." -ForegroundColor White
 Write-Host "  REMEMBER THE ORDER: boot the emulator and wait for the HOME screen BEFORE" -ForegroundColor Yellow
 Write-Host "  running the app. A black screen means it is still booting, not broken." -ForegroundColor Yellow
 Write-Host ""
