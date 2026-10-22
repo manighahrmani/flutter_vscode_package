@@ -22,9 +22,9 @@ If setup fails, find the log file in your Downloads folder: `flutter_vscode_inst
 - Upload it to [GitHub Issues](https://github.com/manighahrmani/flutter_vscode_package/issues/new), or
 - Email it to me (`mani.ghahremani@port.ac.uk`)
 
-## Android emulator setup (Worksheet 6 onwards)
+## Android emulator setup (Worksheet 7 onwards)
 
-From Worksheet 6 the app stores data in a local SQLite database, which is easiest to see
+From Worksheet 7 the app stores data in a local SQLite database, which is easiest to see
 running on an Android emulator. For that, use the Android installer instead of the main one.
 Open **PowerShell** and run:
 
@@ -39,6 +39,6 @@ a separate, self-contained script and does **not** change the main `install.ps1`
 > ⚠️ This installer is much larger and takes **significantly longer** to run than the main one
 > (it downloads several gigabytes of Android tools, typically around 7-10 minutes), and the
 > emulator needs hardware acceleration (WHPX/Hyper-V) which is available on the university lab
-> machines but disabled on some others. Only use it from **Worksheet 6 onwards**, when the app
-> needs a SQLite database. For Worksheets 1 to 5, use the main `install.ps1` above and run on
+> machines but disabled on some others. Only use it from **Worksheet 7 onwards**, when the app
+> needs a SQLite database. For Worksheets 1 to 6, use the main `install.ps1` above and run on
 > Edge.
