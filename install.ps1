@@ -462,37 +462,96 @@ $userDataDir = "$VSCodeFolder\data\user-data"
 foreach ($ext in $RequiredExtensions) {
     Log-Message "Installing extension: $ext..." "DarkGray"
     $installed = $false
-    for ($attempt = 1; $attempt -le 2; $attempt++) {
-        try {
-            & $codeCmd --extensions-dir $extDir --user-data-dir $userDataDir --install-extension $ext --force 2>&1 | Out-Null
+    
+    # Check if already installed in cache
+    if (Test-Path $extDir) {
+        $existing = Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name.ToLower() -like "$($ext.ToLower())*" }
+        if ($existing) {
             $installed = $true
-            break
-        } catch {
-            Start-Sleep -Milliseconds 500
+            Log-Message "[OK] Extension $ext is already installed." "DarkGray"
         }
     }
+
+    # Attempt 1: Direct CLI install
     if (-not $installed) {
-        Log-Message "Warning: Failed to install extension $ext via CLI: $_" "DarkYellow"
+        try {
+            & $codeCmd --extensions-dir $extDir --user-data-dir $userDataDir --install-extension $ext --force 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+            }
+        } catch {}
+    }
+
+    # Attempt 2: Direct VSIX download fallback (bypasses marketplace.visualstudio.com TLS renegotiation / ECONNRESET)
+    if (-not $installed) {
+        $parts = $ext.Split('.')
+        if ($parts.Count -eq 2) {
+            $pub = $parts[0]
+            $name = $parts[1]
+            $vsixUrl = "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/$pub/vsextensions/$name/latest/vspackage"
+            $tempVsix = "$env:TEMP\$name.vsix"
+            if (Test-Path $tempVsix) { Remove-Item $tempVsix -Force -ErrorAction SilentlyContinue }
+            
+            $downloaded = $false
+            $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+            if ($curlCmd) {
+                & curl.exe -sL --compressed -o $tempVsix $vsixUrl 2>&1 | Out-Null
+                if ((Test-Path $tempVsix) -and (Get-Item $tempVsix).Length -gt 1000) {
+                    $downloaded = $true
+                }
+            }
+            if (-not $downloaded) {
+                $downloaded = Download-FileWithRetry $vsixUrl $tempVsix "VSIX package for $ext"
+            }
+
+            if ($downloaded) {
+                & $codeCmd --extensions-dir $extDir --user-data-dir $userDataDir --install-extension $tempVsix --force 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $installed = $true
+                    Log-Message "[OK] Installed $ext via direct VSIX download." "DarkGray"
+                }
+                Remove-Item $tempVsix -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    if (-not $installed) {
+        Log-Message "Warning: Failed to install extension $ext via CLI and VSIX fallback." "DarkYellow"
     }
 }
 
-# 6.5 Lock down Extension Marketplace (Prevent installing further extensions)
-Log-Message "Locking down VS Code Extension Marketplace..." "DarkGray"
-$productJsonPath = "$VSCodeFolder\resources\app\product.json"
-if (Test-Path $productJsonPath) {
-    try {
-        $product = Get-Content $productJsonPath -Raw | ConvertFrom-Json
-        if ($product.PSObject.Properties['extensionsGallery']) {
-            $product.extensionsGallery.serviceUrl = ""
-            $product.extensionsGallery.itemUrl = ""
-            $product.extensionsGallery.controlUrl = ""
-            $product.extensionsGallery.resourceUrlTemplate = ""
-            $product | ConvertTo-Json -Depth 10 | Set-Content $productJsonPath -Encoding UTF8
-            Log-Message "[OK] Extension Marketplace disabled. Only pre-installed extensions are permitted." "Green"
+# Verify installed extensions count before locking down
+$installedCount = 0
+if (Test-Path $extDir) {
+    $dirsInExt = Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name.ToLower() }
+    foreach ($ext in $RequiredExtensions) {
+        if ($dirsInExt | Where-Object { $_ -like "$($ext.ToLower())*" }) {
+            $installedCount++
         }
-    } catch {
-        Log-Message "Notice: Could not modify product.json: $_" "DarkGray"
     }
+}
+
+# 6.5 Lock down Extension Marketplace (only if all required extensions are installed)
+if ($installedCount -ge $RequiredExtensions.Count) {
+    Log-Message "Locking down VS Code Extension Marketplace..." "DarkGray"
+    $productJsonPath = "$VSCodeFolder\resources\app\product.json"
+    if (Test-Path $productJsonPath) {
+        try {
+            $product = Get-Content $productJsonPath -Raw | ConvertFrom-Json
+            if ($product.PSObject.Properties['extensionsGallery']) {
+                $product.extensionsGallery.serviceUrl = ""
+                $product.extensionsGallery.itemUrl = ""
+                $product.extensionsGallery.controlUrl = ""
+                $product.extensionsGallery.resourceUrlTemplate = ""
+                $product | ConvertTo-Json -Depth 10 | Set-Content $productJsonPath -Encoding UTF8
+                Log-Message "[OK] Extension Marketplace disabled. Only pre-installed extensions are permitted." "Green"
+            }
+        } catch {
+            Log-Message "Notice: Could not modify product.json: $_" "DarkGray"
+        }
+    }
+} else {
+    Log-Message "[WARN] Extension Marketplace lockdown skipped: $installedCount/$($RequiredExtensions.Count) extensions installed." "Yellow"
 }
 
 # 7. Configure PATH (Process & User Registry)

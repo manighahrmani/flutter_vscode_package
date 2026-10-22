@@ -663,23 +663,30 @@ Write-Host "Launching Portable VS Code in project folder..." -ForegroundColor Gr
 Log-Launch "Starting VS Code instance"
 
 if (Test-Path $VSCodeExe) {
-    # Ensure Extension Marketplace remains locked down (only pre-installed extensions can run)
-    $productJsonPath = "$ScriptRoot\vscode\resources\app\product.json"
-    if (Test-Path $productJsonPath) {
-        try {
-            $product = Get-Content $productJsonPath -Raw | ConvertFrom-Json
-            if ($product.PSObject.Properties['extensionsGallery'] -and $product.extensionsGallery.serviceUrl -ne "") {
-                $product.extensionsGallery.serviceUrl = ""
-                $product.extensionsGallery.itemUrl = ""
-                $product.extensionsGallery.controlUrl = ""
-                $product.extensionsGallery.resourceUrlTemplate = ""
-                $product | ConvertTo-Json -Depth 10 | Set-Content $productJsonPath -Encoding UTF8
-            }
-        } catch {}
-    }
-
     $extDir = "$ScriptRoot\vscode\data\extensions"
     $userDataDir = "$ScriptRoot\vscode\data\user-data"
+
+    # Ensure Extension Marketplace only remains locked down if required extensions are installed
+    $installedExtCount = 0
+    if (Test-Path $extDir) {
+        $installedExtCount = (Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue).Count
+    }
+    if ($installedExtCount -ge 4) {
+        $productJsonPath = "$ScriptRoot\vscode\resources\app\product.json"
+        if (Test-Path $productJsonPath) {
+            try {
+                $product = Get-Content $productJsonPath -Raw | ConvertFrom-Json
+                if ($product.PSObject.Properties['extensionsGallery'] -and $product.extensionsGallery.serviceUrl -ne "") {
+                    $product.extensionsGallery.serviceUrl = ""
+                    $product.extensionsGallery.itemUrl = ""
+                    $product.extensionsGallery.controlUrl = ""
+                    $product.extensionsGallery.resourceUrlTemplate = ""
+                    $product | ConvertTo-Json -Depth 10 | Set-Content $productJsonPath -Encoding UTF8
+                }
+            } catch {}
+        }
+    }
+
     $vscodeArgs = @(
         "--extensions-dir", $extDir,
         "--user-data-dir", $userDataDir,
