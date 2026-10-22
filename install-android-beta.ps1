@@ -70,7 +70,7 @@ $JdkFolder = "$ToolsFolder\jdk"
 # PRIMARY: concrete, pinned, known-good 17.x asset. This is primary because the
 # .NET WebClient fallback in Download-FileWithRetry does NOT follow redirects,
 # and the Adoptium API URL below is a redirect.
-$UrlJdkPrimary  = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9+9.1/OpenJDK17U-jdk_x64_windows_hotspot_17.0.9_9.zip"
+$UrlJdkPrimary  = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_windows_hotspot_17.0.20.1_1.zip"
 # FALLBACK: Adoptium API "latest 17 GA" redirect. curl.exe -L (tier 1 of
 # Download-FileWithRetry) follows it, so this still resolves if the pinned
 # asset is ever removed.
@@ -84,8 +84,8 @@ $UrlPackageRelease = "https://github.com/manighahrmani/flutter_vscode_package/re
 $UrlVSCode         = "https://update.code.visualstudio.com/latest/win32-x64-archive/stable"
 $FlutterVersion    = "3.47.7"
 $UrlFlutter        = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_$FlutterVersion-stable.zip"
-$UrlGit            = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip"
-$UrlSQLite         = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3450300.zip"
+$UrlGit            = "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip"
+$UrlSQLite         = "https://www.sqlite.org/2026/sqlite-tools-win-x64-3540100.zip"
 
 # Required Extensions
 $RequiredExtensions = @(
