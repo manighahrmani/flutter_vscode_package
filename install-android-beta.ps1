@@ -117,6 +117,40 @@ function Save-Log {
 
 $installStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
+# ----------------- Per-step timing -----------------
+# A lightweight per-step timer so the student can see how long each of the nine
+# [n/9] steps took (and tell which one dominated - almost always the Android
+# SDK + system image download). $script:stepStopwatch is a "lap" timer: it is
+# restarted whenever a new step starts, and the elapsed lap is stored against
+# the PREVIOUS step. $script:stepTimings holds one entry per step in order.
+# Both the console and the log file receive the summary table (via Log-Message)
+# at the finish block.
+$script:stepTimings   = [System.Collections.Generic.List[object]]::new()
+$script:stepStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+function Record-StepStart([string]$label) {
+    # Close the lap for the previously-started step (if any) before starting
+    # the timer for the incoming step.
+    if ($script:stepTimings.Count -gt 0) {
+        $previous = $script:stepTimings[$script:stepTimings.Count - 1]
+        $previous.Seconds = $script:stepStopwatch.Elapsed.TotalSeconds
+    }
+    $script:stepStopwatch.Restart()
+    $entry = @{ Label = $label; Seconds = $null }
+    $script:stepTimings.Add($entry)
+}
+
+function Complete-LastStep {
+    # Record the final lap for the last-started step. Called once, just before
+    # the timing summary is printed.
+    if ($script:stepTimings.Count -gt 0) {
+        $last = $script:stepTimings[$script:stepTimings.Count - 1]
+        if ($null -eq $last.Seconds) {
+            $last.Seconds = $script:stepStopwatch.Elapsed.TotalSeconds
+        }
+    }
+}
+
 function Send-InstallationTelemetry([string]$status, [int]$failures=0, [hashtable]$extraData=@{}) {
     if (-not $TelemetryEndpoint -or $TelemetryEndpoint -eq "") { return }
     try {
@@ -392,6 +426,7 @@ foreach ($d in $dirs) {
 
 # 2. Download / Extract Base Package Template
 Log-Message "[1/9] Setting up base launcher scripts and configuration..." "Green"
+Record-StepStart "1/9 Base launcher & config"
 $pkgZip = "$env:TEMP\flutter_vscode_pkg.zip"
 if (Download-FileWithRetry $UrlPackageRelease $pkgZip "Package Template") {
     Extract-ZipArchive $pkgZip $DestFolder "Base Launcher & Config Template" | Out-Null
@@ -478,6 +513,7 @@ Log-Message "[OK] Default VS Code Flutter settings configured." "Green"
 
 # 3. Setup VS Code Portable
 Log-Message "[2/9] Setting up VS Code Portable..." "Green"
+Record-StepStart "2/9 VS Code Portable"
 if (-not (Test-Path "$VSCodeFolder\Code.exe")) {
     $vscodeZip = "$env:TEMP\vscode_win64.zip"
     if (Download-FileWithRetry $UrlVSCode $vscodeZip "VS Code Portable x64") {
@@ -492,6 +528,7 @@ Log-Message "[OK] VS Code Portable ready." "Green"
 
 # 4. Setup Flutter SDK
 Log-Message "[3/9] Setting up Flutter SDK..." "Green"
+Record-StepStart "3/9 Flutter SDK"
 $flutterVersionFile = "$ToolsFolder\flutter\version"
 $installedFlutterVersion = if (Test-Path $flutterVersionFile) { (Get-Content $flutterVersionFile -Raw).Trim() } else { $null }
 if ((-not (Test-Path "$ToolsFolder\flutter\bin\flutter.bat")) -or ($installedFlutterVersion -ne $FlutterVersion)) {
@@ -512,6 +549,7 @@ Log-Message "[OK] Flutter SDK installed." "Green"
 
 # 5. Setup Git & SQLite CLIs
 Log-Message "[4/9] Setting up Git and SQLite command-line tools..." "Green"
+Record-StepStart "4/9 Git & SQLite"
 if (-not (Test-Path "$ToolsFolder\git\cmd\git.exe")) {
     $gitZip = "$env:TEMP\mingit.zip"
     if (Download-FileWithRetry $UrlGit $gitZip "MinGit") {
@@ -541,6 +579,7 @@ Log-Message "[OK] Git and SQLite CLI tools ready." "Green"
 
 # 6. Install VS Code Extensions
 Log-Message "[5/9] Installing VS Code Extensions..." "Green"
+Record-StepStart "5/9 VS Code extensions"
 $codeCmd = "$VSCodeFolder\bin\code.cmd"
 $extDir  = "$VSCodeFolder\data\extensions"
 $userDataDir = "$VSCodeFolder\data\user-data"
@@ -645,6 +684,7 @@ if ($installedCount -ge $RequiredExtensions.Count) {
 # into $JdkFolder, resolve $JavaHome, wire JAVA_HOME + PATH (Process & User),
 # and verify. The Android steps below are gated on $JavaHome being set.
 Log-Message "[6/9] Setting up portable JDK (BETA)..." "Green"
+Record-StepStart "6/9 Portable JDK"
 
 # Reuse an already-extracted JDK if present (skip the multi-hundred-MB download).
 $existingJava = Get-ChildItem -Path $JdkFolder -Filter "java.exe" -Recurse -ErrorAction SilentlyContinue |
@@ -739,6 +779,7 @@ if ($JavaHome -and (Test-Path "$JavaHome\bin\java.exe")) {
 # ===================== 7. ANDROID SDK (EXPERIMENTAL / BETA) =====================
 if ($JavaHome) {
 Log-Message "[7/9] Setting up Android command-line SDK (BETA)..." "Green"
+Record-StepStart "7/9 Android SDK + image"
 
 # 7a. Download & lay out commandline-tools as cmdline-tools\latest\
 # The zip extracts to a top-level `cmdline-tools` folder. sdkmanager REQUIRES
@@ -915,6 +956,7 @@ Log-Message "[OK] Android SDK setup step finished (see verification below)." "Gr
 
 # 8. Base PATH (flutter/dart/git/sqlite/vscode) so the base env also works.
 Log-Message "[8/9] Configuring base environment & PATH..." "Green"
+Record-StepStart "8/9 Base PATH & env"
 $pathsToAdd = @(
     "$ToolsFolder\flutter\bin",
     "$ToolsFolder\flutter\bin\cache\dart-sdk\bin",
@@ -969,6 +1011,7 @@ Log-Message ""
 Log-Message "=========================================================" "Cyan"
 Log-Message "            RUNNING VERIFICATION CHECKS                  " "Cyan"
 Log-Message "=========================================================" "Cyan"
+Record-StepStart "9/9 Verification & diagnostics"
 
 $CheckFailures = 0
 
@@ -1393,34 +1436,49 @@ try {
             Write-Diag "      (could not read launch log)" "DarkYellow"
         }
 
-        # Terminate the emulator we started, plus any child qemu processes, so
-        # nothing is left running after diagnostics.
-        try {
-            taskkill /PID $emuPid /T /F 2>&1 | Out-Null
-        } catch {}
-        try {
-            Get-Process -ErrorAction SilentlyContinue |
-                Where-Object { $_.ProcessName -match 'qemu-system|emulator' } |
-                ForEach-Object {
-                    try { taskkill /PID $_.Id /T /F 2>&1 | Out-Null } catch {}
-                }
-        } catch {}
-        # CRITICAL: a force-killed emulator leaves lock files in the AVD folder.
-        # If they remain, the student's own `flutter emulators --launch` fails
-        # with "Running multiple emulators with the same AVD ... use -read-only".
-        # Reset adb and delete the stale locks so the next launch is clean.
-        $adbExeDiag = Join-Path $AndroidFolder "platform-tools\adb.exe"
-        if (Test-Path $adbExeDiag) {
-            try { & $adbExeDiag kill-server 2>&1 | Out-Null } catch {}
-        }
-        $avdLockDir = Join-Path $env:USERPROFILE ".android\avd\$AndroidAvdName.avd"
-        if (Test-Path $avdLockDir) {
+        if ($launchSucceeded) {
+            # The emulator booted during the self-check and emulator-5554 came
+            # up as 'device'. LEAVE it running so the student can select it in
+            # VS Code and press F5 without waiting through a second cold boot.
+            # We deliberately do NOT taskkill $emuPid, do NOT sweep
+            # qemu-system/emulator processes, do NOT run `adb kill-server`, and
+            # do NOT delete the AVD *.lock files: those locks belong to the
+            # STILL-RUNNING emulator-5554, and removing them while the process
+            # is live would corrupt its AVD state. A tracked handle ($emuProc /
+            # $emuPid) exists, so leaving it running is safe here.
+            Write-Diag "    Emulator left RUNNING (PID $emuPid) so you can select it in VS Code and press F5 without a second cold boot." "DarkGray"
+        } else {
+            # The emulator did NOT come up. Clean up exactly as before:
+            # terminate the process we started plus any child qemu processes so
+            # nothing is left running after diagnostics.
             try {
-                Get-ChildItem -Path $avdLockDir -Recurse -Include "*.lock","hardware-qemu.ini.lock","multiinstance.lock" -ErrorAction SilentlyContinue |
-                    ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+                taskkill /PID $emuPid /T /F 2>&1 | Out-Null
             } catch {}
+            try {
+                Get-Process -ErrorAction SilentlyContinue |
+                    Where-Object { $_.ProcessName -match 'qemu-system|emulator' } |
+                    ForEach-Object {
+                        try { taskkill /PID $_.Id /T /F 2>&1 | Out-Null } catch {}
+                    }
+            } catch {}
+            # CRITICAL: a force-killed emulator leaves lock files in the AVD folder.
+            # If they remain, the student's own `flutter emulators --launch` fails
+            # with "Running multiple emulators with the same AVD ... use -read-only".
+            # Reset adb and delete the stale locks so the next launch is clean.
+            # This is only reached when NO live emulator needs those locks.
+            $adbExeDiag = Join-Path $AndroidFolder "platform-tools\adb.exe"
+            if (Test-Path $adbExeDiag) {
+                try { & $adbExeDiag kill-server 2>&1 | Out-Null } catch {}
+            }
+            $avdLockDir = Join-Path $env:USERPROFILE ".android\avd\$AndroidAvdName.avd"
+            if (Test-Path $avdLockDir) {
+                try {
+                    Get-ChildItem -Path $avdLockDir -Recurse -Include "*.lock","hardware-qemu.ini.lock","multiinstance.lock" -ErrorAction SilentlyContinue |
+                        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+                } catch {}
+            }
+            Write-Diag "    Emulator process(es) terminated and AVD locks cleared (cleanup done)." "DarkGray"
         }
-        Write-Diag "    Emulator process(es) terminated and AVD locks cleared (cleanup done)." "DarkGray"
     } else {
         Write-Diag "    [FAIL] emulator.exe not found at $emulatorExeDiag; cannot attempt launch." "Red"
     }
@@ -1467,6 +1525,18 @@ Write-Diag ""
 # ----------------- Finish -----------------
 $launcherBat = "$DestFolder\DOUBLE_CLICK_ME_TO_START.bat"
 
+# Close the lap for the final step (verification & diagnostics) and print a
+# per-step timing summary to BOTH the console and the log file so the student
+# can see how long each of the nine steps took and which one dominated.
+Complete-LastStep
+Log-Message "" "White"
+Log-Message "Step timing summary (seconds):" "Cyan"
+foreach ($t in $script:stepTimings) {
+    $secs = [Math]::Round([double]$t.Seconds, 1)
+    Log-Message ("    {0,-32} {1,7:N1}s" -f $t.Label, $secs) "DarkGray"
+}
+Log-Message "" "White"
+
 $totalMinutes = [Math]::Round($installStopwatch.Elapsed.TotalMinutes, 1)
 Log-Message "=========================================================" "Green"
 Log-Message "  Android Emulator BETA setup finished.                  " "Green"
@@ -1475,83 +1545,21 @@ Log-Message "  Total install time: $totalMinutes minutes              " "Green"
 Log-Message "=========================================================" "Green"
 Log-Message ""
 Write-Host ""
-Write-Host "HOW TO LAUNCH THE EMULATOR AND RUN YOUR APP (do these IN ORDER):" -ForegroundColor Cyan
-Write-Host "  a. Open a NEW terminal so the updated PATH is loaded (close any old one)." -ForegroundColor White
-Write-Host "  b. Start the emulator and WAIT for it to fully boot to the Android HOME" -ForegroundColor White
-Write-Host "     screen. The FIRST cold boot can take several MINUTES and may show a" -ForegroundColor White
-Write-Host "     BLACK screen for a while - this is NORMAL, it is still booting, not" -ForegroundColor White
-Write-Host "     broken. Wait until the Android launcher / home screen actually appears." -ForegroundColor White
+Write-Host "RUN YOUR APP ON THE EMULATOR:" -ForegroundColor Cyan
+Write-Host "  The emulator is already set up. In VS Code, use the device selector in the" -ForegroundColor White
+Write-Host "  bottom-right status bar (or Command Palette: 'Flutter: Select Device') to pick" -ForegroundColor White
+Write-Host "  the Android emulator, then press F5. VS Code is the simplest route." -ForegroundColor White
+Write-Host "  If the emulator is not running, launch it with (first cold boot takes a few" -ForegroundColor White
+Write-Host "  minutes; a black screen is normal - wait for the Android home screen):" -ForegroundColor White
 Write-Host "       flutter emulators --launch $AndroidAvdName" -ForegroundColor Green
-Write-Host "     (fallback if that command is not found:)" -ForegroundColor DarkGray
-Write-Host "       emulator -avd $AndroidAvdName" -ForegroundColor Green
-Write-Host "  c. Confirm the device is seen. This should now list an Android device" -ForegroundColor White
-Write-Host "     such as 'sdk gphone64 x86 64 (mobile)' / an emulator-5554 entry, NOT" -ForegroundColor White
-Write-Host "     only Windows + Edge:" -ForegroundColor White
-Write-Host "       flutter devices" -ForegroundColor Green
-Write-Host "     If it is not listed yet, check adb and wait until emulator-5554 shows" -ForegroundColor White
-Write-Host "     as 'device':" -ForegroundColor White
-Write-Host "       adb devices" -ForegroundColor Green
-Write-Host "  d. In your project folder, run the app on the emulator:" -ForegroundColor White
+Write-Host "  Terminal alternative (do not pick the 'Windows' device):" -ForegroundColor White
 Write-Host "       flutter run -d emulator-5554" -ForegroundColor Green
-Write-Host "     Choose the EMULATOR as your run device (or Edge for the web). Do NOT" -ForegroundColor White
-Write-Host "     choose the 'Windows' device - Windows desktop builds need Developer" -ForegroundColor White
-Write-Host "     Mode/admin and will fail with a symlink error; if you see that, just" -ForegroundColor White
-Write-Host "     switch the device back to the emulator or Edge." -ForegroundColor White
-Write-Host "  e. VS CODE ROUTE (instead of the terminal in step d): open the project in" -ForegroundColor White
-Write-Host "     VS Code, then use the device selector in the bottom-right status bar" -ForegroundColor White
-Write-Host "     (or Command Palette: 'Flutter: Select Device') to pick the Android" -ForegroundColor White
-Write-Host "     emulator. It only appears once the emulator is BOOTED and flutter" -ForegroundColor White
-Write-Host "     doctor sees the SDK. Then press F5 / Run." -ForegroundColor White
-Write-Host "  f. To inspect the SQLite database: because the app runs in DEBUG mode you" -ForegroundColor White
-Write-Host "     can copy its database out of the emulator with run-as (no root needed)" -ForegroundColor White
-Write-Host "     and open it with the shipped SQLite Viewer VS Code extension. The app" -ForegroundColor White
-Write-Host "     (package com.example.sandwich_shop) creates sandwich_data.db via its" -ForegroundColor White
-Write-Host "     SandwichDatabase. Run the app at least once first (so the database" -ForegroundColor White
-Write-Host "     exists), then copy it out in TWO steps via /data/local/tmp (which the" -ForegroundColor White
-Write-Host "     adb shell can write to, unlike /sdcard), then adb pull (binary-safe):" -ForegroundColor White
+Write-Host "  To inspect the SQLite database (run the app once first so it exists):" -ForegroundColor White
 Write-Host "       adb shell `"run-as com.example.sandwich_shop cat databases/sandwich_data.db > /data/local/tmp/s.db`"" -ForegroundColor Green
 Write-Host "       adb pull /data/local/tmp/s.db sandwich_shop.db" -ForegroundColor Green
-Write-Host "     then open sandwich_shop.db in VS Code (the SQLite Viewer extension" -ForegroundColor White
-Write-Host "     shows the tables and rows). Do NOT redirect 'adb shell ... > file.db' on" -ForegroundColor White
-Write-Host "     the PC side (PowerShell corrupts the bytes), and do NOT use /sdcard" -ForegroundColor White
-Write-Host "     (the run-as sandbox cannot write there)." -ForegroundColor White
-Write-Host "  REMEMBER THE ORDER: boot the emulator and wait for the HOME screen BEFORE" -ForegroundColor Yellow
-Write-Host "  running the app. A black screen means it is still booting, not broken." -ForegroundColor Yellow
-Write-Host ""
-Write-Host "==========================================================================" -ForegroundColor Yellow
-Write-Host "  IMPORTANT BETA / EXPERIMENTAL CAVEATS - PLEASE READ" -ForegroundColor Yellow
-Write-Host "==========================================================================" -ForegroundColor Yellow
-Write-Host "  * The Android emulator needs HARDWARE ACCELERATION (WHPX / Hyper-V on" -ForegroundColor White
-Write-Host "    Windows, or HAXM on older machines). It CAN work on lab machines where" -ForegroundColor White
-Write-Host "    WHPX / Hyper-V is available - this has been CONFIRMED on at least one" -ForegroundColor White
-Write-Host "    lab machine - but it is SLOW to boot and still a BETA. On hardware where" -ForegroundColor White
-Write-Host "    virtualization is disabled in BIOS or blocked without admin rights, the" -ForegroundColor White
-Write-Host "    emulator will NOT launch even though this installer reported success." -ForegroundColor White
-Write-Host "  * The Android SDK + system image download is MULTIPLE GIGABYTES." -ForegroundColor White
-Write-Host "  * This is an EXPERIMENTAL / BETA path; it has worked on at least one lab" -ForegroundColor White
-Write-Host "    machine but is not yet widely tested, so expect rough edges." -ForegroundColor White
-Write-Host "  * A portable JDK is now downloaded and configured AUTOMATICALLY by this" -ForegroundColor White
-Write-Host "    script (no manual Java install needed)." -ForegroundColor White
-Write-Host "  * Your existing install.ps1 environment is NOT affected by this script." -ForegroundColor White
-Write-Host "" -ForegroundColor White
-Write-Host "  >> PLEASE REPORT BACK whether the emulator actually LAUNCHES on your" -ForegroundColor Magenta
-Write-Host "     machine (yes/no + any error), so we know if this path is viable." -ForegroundColor Magenta
-Write-Host "==========================================================================" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "==========================================================================" -ForegroundColor Cyan
-Write-Host "  EMULATOR DIAGNOSTICS - PLEASE SEND BOTH LOG FILES BACK" -ForegroundColor Cyan
-Write-Host "==========================================================================" -ForegroundColor Cyan
-Write-Host "  Diagnostics log: $env:USERPROFILE\Downloads\android_emulator_diagnostics.log" -ForegroundColor Green
-Write-Host "  Launch log:      $env:USERPROFILE\Downloads\android_emulator_launch.log" -ForegroundColor Green
-Write-Host "  The web (Edge/Chrome) path works regardless and needs none of this." -ForegroundColor White
-Write-Host ""
-Write-Host "RUNNING A FLUTTER PROJECT ON THE EMULATOR:" -ForegroundColor Cyan
-Write-Host "  A Flutter project must have Android enabled to run on the emulator." -ForegroundColor White
-Write-Host "  If your project has no 'android/' folder, enable it first by running" -ForegroundColor White
-Write-Host "  this INSIDE the project folder:" -ForegroundColor White
-Write-Host "       flutter create --platforms=android ." -ForegroundColor Green
-Write-Host "  Then launch the emulator and run on it:" -ForegroundColor White
-Write-Host "       flutter run -d emulator-5554" -ForegroundColor Green
+Write-Host "  BETA: needs hardware acceleration (WHPX/Hyper-V); the web/Edge path needs none" -ForegroundColor Yellow
+Write-Host "  of this. Please report whether the emulator launched (diagnostics logs are in" -ForegroundColor Yellow
+Write-Host "  $env:USERPROFILE\Downloads)." -ForegroundColor Yellow
 Write-Host ""
 
 Save-Log
