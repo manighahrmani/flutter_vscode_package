@@ -8,7 +8,7 @@
       - Flutter SDK & Dart SDK
       - MinGit CLI
       - SQLite CLI Tools
-      - Agreed VS Code Extensions (Flutter, Dart, Copilot, PRs, ErrorLens, Icons, SQLite Viewer)
+      - Agreed VS Code Extensions (Flutter, Dart, Copilot, PRs, ErrorLens, Icons, SQLite Viewer, Flutter Coverage)
       - Default Flutter Settings, Auto-save, and Edge Web debugging
       - Permanent User PATH and environment variables
 .USAGE
@@ -47,7 +47,8 @@ $RequiredExtensions = @(
     "GitHub.vscode-pull-request-github",
     "usernamehw.errorlens",
     "pkief.material-icon-theme",
-    "qwtel.sqlite-viewer"
+    "qwtel.sqlite-viewer",
+    "Flutterando.flutter-coverage"
 )
 
 # ----------------- Telemetry & Logging Setup -----------------

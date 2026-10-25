@@ -68,7 +68,7 @@ Assert-Test "Syntax - PowerShell Scripts (AST Parsing)" {
 }
 
 Assert-Test "Syntax - JSON Files (Strict Parsing)" {
-    $JsonFiles = Get-ChildItem -Path $ScriptRoot -Recurse -Filter "*.json" | Where-Object { $_.FullName -notmatch "\\\.git\\" }
+    $JsonFiles = Get-ChildItem -Path $ScriptRoot -Recurse -Filter "*.json" | Where-Object { $_.FullName -notmatch "\\\.git\\" -and $_.FullName -notmatch "\\vscode\\data\\extensions\\" }
     foreach ($Json in $JsonFiles) {
         try {
             $Content = Get-Content $Json.FullName -Raw | ConvertFrom-Json

@@ -95,7 +95,8 @@ $RequiredExtensions = @(
     "GitHub.vscode-pull-request-github",
     "usernamehw.errorlens",
     "pkief.material-icon-theme",
-    "qwtel.sqlite-viewer"
+    "qwtel.sqlite-viewer",
+    "Flutterando.flutter-coverage"
 )
 
 # ----------------- Telemetry & Logging Setup -----------------
